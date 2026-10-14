@@ -1,0 +1,295 @@
+"""LLM 接入层：底层用 LiteLLM，上层只暴露 chat / stream_chat / chat_json 三个函数。
+
+- 按任务分四档模型（complete / write / judge / agent），见 config.py；
+- 每档独立的超时、重试次数和备用模型（主模型失败时依次尝试 fallbacks）；
+- 需要 JSON 的地方优先使用服务端 JSON 模式，不支持时退回到宽松解析；
+- 每次调用都记录到 llm_calls 表（耗时、首 token 延迟、token 数、费用），/api/llm/stats 汇总；
+- LLM_FAKE=1 时不调用任何模型，返回调用方给出的演示内容，便于离线开发和测试。
+
+业务代码只依赖这三个函数，以后换成别的 SDK 也只需要改这一个文件。
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import time
+from typing import Any, Callable, Iterator, Literal
+
+from .config import ModelTier, get_settings
+
+os.environ.setdefault("LITELLM_LOG", "ERROR")
+import litellm  # noqa: E402
+
+litellm.drop_params = True  # 不同服务支持的参数不一样，不支持的直接丢弃而不是报错
+litellm.suppress_debug_info = True
+litellm.telemetry = False
+logging.getLogger("LiteLLM").setLevel(logging.ERROR)
+
+Tier = Literal["complete", "write", "judge", "agent"]
+FakeFn = Callable[[list[dict[str, str]]], str] | str | None
+
+
+class LLMNotConfigured(RuntimeError):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# 模型名解析
+# ---------------------------------------------------------------------------
+_LEGACY_PREFIX = {
+    "openai_like": "openai",
+    "openai-compatible": "openai",
+    "openai_compat": "openai",
+    "custom": "openai",
+    "openai": "openai",
+    "openai_chat": "openai",
+    "ollama": "ollama_chat",
+    "deepseek": "deepseek",
+}
+
+
+_PROVIDERS = {str(getattr(p, "value", p)).lower() for p in litellm.provider_list}
+
+
+def resolve_model(model: str) -> str:
+    """补全 LiteLLM 的 provider 前缀。
+
+    deepseek/deepseek-chat → 原样；mimo-v2.5-pro（旧配置）→ openai/mimo-v2.5-pro；
+    Qwen/Qwen2.5-7B-Instruct（硅基流动这类带斜杠的模型名）→ openai/Qwen/Qwen2.5-7B-Instruct。
+    """
+    head = model.split("/", 1)[0].lower()
+    if "/" in model and head in _PROVIDERS:
+        return model
+    prefix = _LEGACY_PREFIX.get(get_settings().provider, "openai")
+    return f"{prefix}/{model}"
+
+
+def tier_info() -> dict[str, dict[str, Any]]:
+    s = get_settings()
+    return {
+        name: {"model": resolve_model(t.model), "api_base": t.api_base, "timeout": t.timeout,
+               "retries": t.retries, "fallbacks": [resolve_model(m) for m in t.fallbacks]}
+        for name, t in s.tiers.items()
+    }
+
+
+def _candidates(t: ModelTier) -> list[str]:
+    return [resolve_model(t.model), *(resolve_model(m) for m in t.fallbacks)]
+
+
+def _kwargs(t: ModelTier, model: str) -> dict[str, Any]:
+    kw: dict[str, Any] = {"model": model, "timeout": t.timeout, "num_retries": t.retries}
+    if t.api_key:
+        kw["api_key"] = t.api_key
+    if t.api_base:
+        base = t.api_base.rstrip("/")
+        # Ollama 原生接口不带 /v1；OpenAI 兼容接口需要 /v1
+        if model.startswith(("ollama/", "ollama_chat/")) and base.endswith("/v1"):
+            base = base[:-3]
+        kw["api_base"] = base
+    return kw
+
+
+def _check_ready(t: ModelTier) -> None:
+    s = get_settings()
+    local = resolve_model(t.model).startswith(("ollama/", "ollama_chat/"))
+    if not (t.api_key or local or s.provider == "ollama"):
+        raise LLMNotConfigured("未配置模型 API Key（LLM_API_KEY / OPENAI_API_KEY），或设置 LLM_FAKE=1 离线演示")
+
+
+# ---------------------------------------------------------------------------
+# 调用日志
+# ---------------------------------------------------------------------------
+def _log(tier: str, model: str, *, stream: bool, ok: bool, latency: float, first_token: float | None = None,
+         usage: Any = None, cost: float | None = None, error: str | None = None) -> None:
+    try:
+        from .db import get_conn
+
+        pt = getattr(usage, "prompt_tokens", None) if usage else None
+        ct = getattr(usage, "completion_tokens", None) if usage else None
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO llm_calls (tier, model, stream, ok, latency_ms, first_token_ms, prompt_tokens,"
+                " completion_tokens, cost_usd, error) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (tier, model, int(stream), int(ok), int(latency * 1000),
+                 int(first_token * 1000) if first_token is not None else None, pt, ct, cost,
+                 (error or "")[:300] or None),
+            )
+    except Exception:  # 日志失败不能影响主流程
+        pass
+
+
+def _cost(resp: Any) -> float | None:
+    try:
+        return float(litellm.completion_cost(completion_response=resp))
+    except Exception:
+        return None
+
+
+def _fake_text(messages: list[dict[str, str]], fake: FakeFn) -> str:
+    if callable(fake):
+        return fake(messages)
+    if isinstance(fake, str):
+        return fake
+    last = messages[-1]["content"] if messages else ""
+    return f"[离线演示输出] {last[:60]}"
+
+
+# ---------------------------------------------------------------------------
+# 对外接口
+# ---------------------------------------------------------------------------
+def chat(
+    messages: list[dict[str, str]],
+    *,
+    tier: Tier = "write",
+    temperature: float = 0.3,
+    max_tokens: int | None = None,
+    json_mode: bool = False,
+    fake: FakeFn = None,
+) -> str:
+    s = get_settings()
+    if s.llm_fake:
+        return _fake_text(messages, fake)
+    t = s.tiers[tier]
+    _check_ready(t)
+    last_err: Exception | None = None
+    for model in _candidates(t):
+        kw = _kwargs(t, model) | {"messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+        if json_mode:
+            kw["response_format"] = {"type": "json_object"}
+        start = time.perf_counter()
+        try:
+            try:
+                resp = litellm.completion(**kw)
+            except litellm.BadRequestError:
+                if not json_mode:
+                    raise
+                kw.pop("response_format")  # 服务端不支持 JSON 模式 → 退回普通模式
+                resp = litellm.completion(**kw)
+            _log(tier, model, stream=False, ok=True, latency=time.perf_counter() - start,
+                 usage=getattr(resp, "usage", None), cost=_cost(resp))
+            return resp.choices[0].message.content or ""
+        except Exception as e:  # noqa: BLE001
+            _log(tier, model, stream=False, ok=False, latency=time.perf_counter() - start, error=repr(e))
+            last_err = e
+    raise last_err  # type: ignore[misc]
+
+
+def stream_chat(
+    messages: list[dict[str, str]],
+    *,
+    tier: Tier = "write",
+    temperature: float = 0.3,
+    fake: FakeFn = None,
+) -> Iterator[str]:
+    s = get_settings()
+    if s.llm_fake:
+        text = _fake_text(messages, fake)
+        for i in range(0, len(text), 6):
+            yield text[i : i + 6]
+        return
+    t = s.tiers[tier]
+    _check_ready(t)
+    last_err: Exception | None = None
+    for model in _candidates(t):
+        start = time.perf_counter()
+        first: float | None = None
+        usage = None
+        try:
+            stream = litellm.completion(
+                **_kwargs(t, model), messages=messages, temperature=temperature, stream=True,
+                stream_options={"include_usage": True},
+            )
+            for chunk in stream:
+                if getattr(chunk, "usage", None):
+                    usage = chunk.usage
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    if first is None:
+                        first = time.perf_counter() - start
+                    yield delta
+            _log(tier, model, stream=True, ok=True, latency=time.perf_counter() - start, first_token=first, usage=usage)
+            return
+        except Exception as e:  # noqa: BLE001
+            _log(tier, model, stream=True, ok=False, latency=time.perf_counter() - start, first_token=first, error=repr(e))
+            if first is not None:  # 已经输出了一部分，不能再切换模型重来
+                raise
+            last_err = e
+    raise last_err  # type: ignore[misc]
+
+
+_JSON_BLOCK = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
+
+
+def parse_json(text: str) -> Any:
+    """宽松地从模型输出里解析 JSON（兼容 ```json 代码块和前后废话）。"""
+    m = _JSON_BLOCK.search(text)
+    candidate = (m.group(1) if m else text).strip()
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        pass
+    for open_c, close_c in (("{", "}"), ("[", "]")):
+        start, end = candidate.find(open_c), candidate.rfind(close_c)
+        if start != -1 and end > start:
+            try:
+                return json.loads(candidate[start : end + 1])
+            except json.JSONDecodeError:
+                continue
+    raise ValueError(f"模型输出不是合法 JSON：{text[:200]}")
+
+
+def chat_json(messages: list[dict[str, str]], *, fake: FakeFn = None, retries: int = 1, **kw: Any) -> Any:
+    msgs = list(messages)
+    last_err: Exception | None = None
+    for _ in range(retries + 1):
+        text = chat(msgs, fake=fake, json_mode=True, **kw)
+        try:
+            return parse_json(text)
+        except ValueError as e:
+            last_err = e
+            msgs = msgs + [
+                {"role": "assistant", "content": text},
+                {"role": "user", "content": "上面的输出不是合法 JSON，请只输出 JSON，不要任何解释。"},
+            ]
+    raise last_err  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# 统计
+# ---------------------------------------------------------------------------
+def _pct(values: list[int], p: float) -> int | None:
+    if not values:
+        return None
+    v = sorted(values)
+    return v[min(len(v) - 1, int(round(p * (len(v) - 1))))]
+
+
+def stats(days: int = 30) -> dict[str, Any]:
+    from .db import get_conn
+
+    with get_conn() as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM llm_calls WHERE ts >= datetime('now', ?)", (f"-{days} days",)
+        )]
+    out: dict[str, Any] = {}
+    for tier in ("complete", "write", "judge", "agent"):
+        rs = [r for r in rows if r["tier"] == tier]
+        ok = [r for r in rs if r["ok"]]
+        lat = [r["latency_ms"] for r in ok if r["latency_ms"] is not None]
+        ftk = [r["first_token_ms"] for r in ok if r["first_token_ms"] is not None]
+        out[tier] = {
+            "calls": len(rs),
+            "errors": len(rs) - len(ok),
+            "latency_p50_ms": _pct(lat, 0.5),
+            "latency_p95_ms": _pct(lat, 0.95),
+            "first_token_p50_ms": _pct(ftk, 0.5),
+            "prompt_tokens": sum(r["prompt_tokens"] or 0 for r in ok),
+            "completion_tokens": sum(r["completion_tokens"] or 0 for r in ok),
+            "cost_usd": round(sum(r["cost_usd"] or 0 for r in ok), 4),
+        }
+    return {"days": days, "tiers": out}

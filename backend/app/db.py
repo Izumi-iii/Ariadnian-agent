@@ -1,0 +1,108 @@
+"""SQLite 存储：文献元数据、全文切块、论文文档。单文件、零运维，适合本地使用。"""
+from __future__ import annotations
+
+import sqlite3
+import threading
+from contextlib import contextmanager
+from typing import Iterator
+
+from .config import get_settings
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS papers (
+    id            TEXT PRIMARY KEY,
+    bibkey        TEXT UNIQUE NOT NULL,
+    title         TEXT NOT NULL,
+    authors       TEXT NOT NULL DEFAULT '[]',
+    year          INTEGER,
+    venue         TEXT,
+    doi           TEXT,
+    arxiv_id      TEXT,
+    url           TEXT,
+    pdf_url       TEXT,
+    abstract      TEXT,
+    source        TEXT,
+    citation_count INTEGER,
+    has_fulltext  INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS chunks (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    paper_id   TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+    idx        INTEGER NOT NULL,
+    section    TEXT,
+    page       INTEGER,
+    text       TEXT NOT NULL,
+    embedding  BLOB
+);
+CREATE INDEX IF NOT EXISTS idx_chunks_paper ON chunks(paper_id);
+CREATE TABLE IF NOT EXISTS documents (
+    id          TEXT PRIMARY KEY,
+    title       TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    cite_style  TEXT NOT NULL DEFAULT 'numeric',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS llm_calls (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts                TEXT NOT NULL DEFAULT (datetime('now')),
+    tier              TEXT NOT NULL,
+    model             TEXT NOT NULL,
+    stream            INTEGER NOT NULL DEFAULT 0,
+    ok                INTEGER NOT NULL,
+    latency_ms        INTEGER,
+    first_token_ms    INTEGER,
+    prompt_tokens     INTEGER,
+    completion_tokens INTEGER,
+    cost_usd          REAL,
+    error             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_tier ON llm_calls(tier, ts);
+CREATE TABLE IF NOT EXISTS agent_threads (
+    thread_id   TEXT PRIMARY KEY,
+    doc_id      TEXT,
+    topic       TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'running',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_lock = threading.Lock()
+_initialized = False
+
+
+def db_path() -> str:
+    return str(get_settings().data_dir / "aria.sqlite")
+
+
+def _connect() -> sqlite3.Connection:
+    conn = sqlite3.connect(db_path(), check_same_thread=False, timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    return conn
+
+
+def init_db() -> None:
+    global _initialized
+    with _lock:
+        if _initialized:
+            return
+        conn = _connect()
+        conn.executescript(_SCHEMA)
+        conn.commit()
+        conn.close()
+        _initialized = True
+
+
+@contextmanager
+def get_conn() -> Iterator[sqlite3.Connection]:
+    init_db()
+    conn = _connect()
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()

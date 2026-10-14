@@ -1,0 +1,36 @@
+[project]
+name = "ariadne-backend"
+version = "0.1.0"
+description = "Ariadne 论文写作助手后端：FastAPI + LangGraph"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+    "litellm>=1.70",
+    "openai>=1.40",
+    "langgraph>=1.0",
+    "langgraph-checkpoint-sqlite>=2.0",
+    "httpx>=0.27",
+    "requests>=2.31",
+    "pymupdf>=1.24",
+    "rank-bm25>=0.2.2",
+    "jieba>=0.42",
+    "numpy>=1.26",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+name = "tsinghua"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+default = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

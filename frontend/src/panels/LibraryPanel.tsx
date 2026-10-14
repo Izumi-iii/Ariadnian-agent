@@ -1,0 +1,333 @@
+import { useMemo, useRef, useState } from 'react'
+import {
+  Box, Button, Checkbox, Chip, CircularProgress, Collapse, Dialog, DialogActions, DialogContent, DialogTitle,
+  Divider, FormControlLabel, IconButton, InputBase, Link, ListItemIcon, Menu, MenuItem, TextField, Tooltip, Typography,
+} from '@mui/material'
+import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined'
+import { Card, SectionLabel, Thread, ThreadItem } from '../components/Thread'
+import SearchIcon from '@mui/icons-material/Search'
+import TravelExploreIcon from '@mui/icons-material/TravelExplore'
+import UploadFileIcon from '@mui/icons-material/UploadFile'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
+import FormatQuoteIcon from '@mui/icons-material/FormatQuote'
+import CloudDownloadOutlinedIcon from '@mui/icons-material/CloudDownloadOutlined'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
+import AddIcon from '@mui/icons-material/Add'
+import CheckIcon from '@mui/icons-material/Check'
+import { api } from '../lib/api'
+import { useApp } from '../lib/appContext'
+import { normalizeTitle } from '../lib/util'
+import type { Paper, PaperIn } from '../lib/types'
+import { brand } from '../theme'
+
+function meta(p: PaperIn) {
+  const a = p.authors ?? []
+  return [a.length ? a[0] + (a.length > 1 ? ' 等' : '') : '佚名', p.year, p.venue].filter(Boolean).join(' · ')
+}
+
+function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { papers, refreshPapers, notify } = useApp()
+  const [q, setQ] = useState('')
+  const [sources, setSources] = useState({ semantic_scholar: true, arxiv: true })
+  const [results, setResults] = useState<PaperIn[]>([])
+  const [errors, setErrors] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const [adding, setAdding] = useState<string | null>(null)
+  const inLib = useMemo(() => new Set(papers.map((p) => normalizeTitle(p.title))), [papers])
+
+  const search = async () => {
+    if (q.trim().length < 2) return
+    setLoading(true)
+    try {
+      const src = Object.entries(sources).filter(([, v]) => v).map(([k]) => k).join(',')
+      const r = await api.searchExternal(q.trim(), src)
+      setResults(r.results)
+      setErrors(r.errors)
+    } catch (e: any) {
+      notify(e.message, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const add = async (p: PaperIn) => {
+    setAdding(p.title)
+    try {
+      await api.addPaper(p)
+      await refreshPapers()
+    } catch (e: any) {
+      notify(e.message, 'error')
+    } finally {
+      setAdding(null)
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle sx={{ pb: 1 }}>在线检索文献</DialogTitle>
+      <DialogContent>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
+          <TextField
+            autoFocus
+            fullWidth
+            placeholder="英文关键词效果最好，例如：retrieval augmented generation citation"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && search()}
+          />
+          <Button variant="contained" onClick={search} disabled={loading} startIcon={loading ? <CircularProgress size={14} /> : <SearchIcon />}>
+            检索
+          </Button>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          {(['semantic_scholar', 'arxiv'] as const).map((s) => (
+            <FormControlLabel
+              key={s}
+              control={<Checkbox size="small" checked={sources[s]} onChange={(e) => setSources({ ...sources, [s]: e.target.checked })} />}
+              label={<Typography variant="body2">{s === 'arxiv' ? 'arXiv' : 'Semantic Scholar'}</Typography>}
+            />
+          ))}
+        </Box>
+        {errors.map((e) => (
+          <Typography key={e} variant="caption" color="warning.main" component="div">
+            ⚠ {e}
+          </Typography>
+        ))}
+        <Box sx={{ mt: 1 }}>
+          {results.map((p) => {
+            const have = inLib.has(normalizeTitle(p.title))
+            return (
+              <Box key={p.title} sx={{ py: 1.25, borderBottom: `1px solid ${brand.line}`, display: 'flex', gap: 1.5 }}>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {p.url ? (
+                      <Link href={p.url} target="_blank" rel="noreferrer" underline="hover" color="inherit">
+                        {p.title}
+                      </Link>
+                    ) : (
+                      p.title
+                    )}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" component="div">
+                    {meta(p)}
+                    {p.citation_count != null && ` · 被引 ${p.citation_count}`}
+                    {p.pdf_url && ' · 有开放 PDF'}
+                  </Typography>
+                  {p.abstract && (
+                    <Typography variant="caption" component="div" sx={{ mt: 0.5, color: brand.ink, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {p.abstract}
+                    </Typography>
+                  )}
+                </Box>
+                <Box>
+                  {have ? (
+                    <Chip size="small" icon={<CheckIcon />} label="已在库中" />
+                  ) : (
+                    <Button variant="outlined" startIcon={adding === p.title ? <CircularProgress size={12} /> : <AddIcon />} onClick={() => add(p)} disabled={!!adding}>
+                      加入
+                    </Button>
+                  )}
+                </Box>
+              </Box>
+            )
+          })}
+          {!loading && !results.length && (
+            <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
+              输入关键词后回车检索。加入文献库的论文可以在正文中用 @ 引用。
+            </Typography>
+          )}
+        </Box>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>完成</Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
+function PaperItem({ p }: { p: Paper }) {
+  const { editor, refreshPapers, notify } = useApp()
+  const [open, setOpen] = useState(false)
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const act = async (fn: () => Promise<any>, ok?: string) => {
+    setAnchor(null)
+    setBusy(true)
+    try {
+      await fn()
+      await refreshPapers()
+      if (ok) notify(ok, 'success')
+    } catch (e: any) {
+      notify(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <ThreadItem icon={<ArticleOutlinedIcon />} dense>
+      <Card variant={open ? 'data' : 'plain'} onClick={() => setOpen(!open)} sx={{ pr: 0.5, '&:hover .ops': { opacity: 1 } }}>
+        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'flex-start' }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 500, lineHeight: 1.4 }}>{p.title}</Typography>
+            <Typography noWrap sx={{ fontSize: 11.5, color: brand.muted, mt: 0.25 }}>
+              {meta(p)}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 0.75, mt: 0.5, alignItems: 'center' }}>
+              <Box
+                sx={{
+                  fontSize: 10.5, px: 0.6, borderRadius: '3px', lineHeight: '17px',
+                  color: p.has_fulltext ? brand.green : brand.muted, bgcolor: p.has_fulltext ? 'rgba(46,125,50,0.10)' : 'rgba(0,0,0,0.05)',
+                }}
+              >
+                {p.has_fulltext ? `全文 · ${p.chunk_count} 段` : '仅摘要'}
+              </Box>
+              <Typography sx={{ fontFamily: 'Roboto Mono', fontSize: 10.5, color: brand.faint }}>{p.bibkey}</Typography>
+              {busy && <CircularProgress size={10} />}
+            </Box>
+          </Box>
+          <Box className="ops" sx={{ display: 'flex', opacity: open ? 1 : 0, transition: 'opacity .15s' }} onClick={(e) => e.stopPropagation()}>
+            <Tooltip title="在光标处引用">
+              <span>
+                <IconButton disabled={!editor} onClick={() => editor?.chain().focus().insertCitation([p.id]).run()}>
+                  <FormatQuoteIcon sx={{ fontSize: 16, color: brand.blue }} />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <IconButton onClick={(e) => setAnchor(e.currentTarget)} aria-label="更多">
+              <MoreVertIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </Box>
+        </Box>
+        <Collapse in={open}>
+          <Typography sx={{ mt: 1, fontSize: 12, color: brand.ink, lineHeight: 1.65 }}>{p.abstract || '（无摘要）'}</Typography>
+          {p.url && (
+            <Link href={p.url} target="_blank" rel="noreferrer" sx={{ fontSize: 12 }} onClick={(e) => e.stopPropagation()}>
+              打开原文页面
+            </Link>
+          )}
+        </Collapse>
+      </Card>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".pdf,.txt,.md"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) act(() => api.uploadPaper(f, p.id), '全文已解析')
+          e.target.value = ''
+        }}
+      />
+      <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
+        <MenuItem disabled={!p.pdf_url} onClick={() => act(() => api.fetchFulltext(p.id), '全文已下载并解析')}>
+          <ListItemIcon>
+            <CloudDownloadOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          下载开放获取全文
+        </MenuItem>
+        <MenuItem onClick={() => { setAnchor(null); fileRef.current?.click() }}>
+          <ListItemIcon>
+            <UploadFileIcon fontSize="small" />
+          </ListItemIcon>
+          上传本地 PDF 作为全文
+        </MenuItem>
+        <MenuItem
+          onClick={async () => {
+            setAnchor(null)
+            await navigator.clipboard.writeText(await api.bibtex([p.id]))
+            notify('BibTeX 已复制', 'success')
+          }}
+        >
+          <ListItemIcon>
+            <ContentCopyIcon fontSize="small" />
+          </ListItemIcon>
+          复制 BibTeX
+        </MenuItem>
+        <Divider />
+        <MenuItem onClick={() => act(() => api.deletePaper(p.id), '已从文献库删除')} sx={{ color: 'error.main' }}>
+          <ListItemIcon>
+            <DeleteOutlineIcon fontSize="small" color="error" />
+          </ListItemIcon>
+          从文献库删除
+        </MenuItem>
+      </Menu>
+    </ThreadItem>
+  )
+}
+
+export function LibraryPanel() {
+  const { papers, refreshPapers, notify } = useApp()
+  const [filter, setFilter] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const shown = useMemo(() => {
+    const f = filter.trim().toLowerCase()
+    if (!f) return papers
+    return papers.filter((p) => `${p.title} ${p.authors.join(' ')} ${p.year} ${p.bibkey}`.toLowerCase().includes(f))
+  }, [papers, filter])
+
+  const upload = async (files: FileList) => {
+    setUploading(true)
+    for (const f of Array.from(files)) {
+      try {
+        const r = await api.uploadPaper(f)
+        notify(`《${r.paper.title.slice(0, 30)}》已解析为 ${r.chunks} 个片段`, 'success')
+      } catch (e: any) {
+        notify(`${f.name}：${e.message}`, 'error')
+      }
+    }
+    await refreshPapers()
+    setUploading(false)
+  }
+
+  return (
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ px: 2, pt: 1.75, pb: 1 }}>
+        <SectionLabel>文献库 · {papers.length} 篇</SectionLabel>
+        <Box
+          sx={{
+            display: 'flex', alignItems: 'center', gap: 0.75, border: `1px solid ${brand.line}`, borderRadius: '6px', px: 1, py: 0.25,
+            '&:focus-within': { borderColor: 'rgba(0,120,212,0.5)' },
+          }}
+        >
+          <SearchIcon sx={{ fontSize: 17, color: brand.faint }} />
+          <InputBase fullWidth placeholder="筛选标题、作者、年份" value={filter} onChange={(e) => setFilter(e.target.value)} sx={{ fontSize: 13 }} />
+        </Box>
+      </Box>
+      <Box sx={{ flex: 1, overflow: 'auto', px: 2, pb: 2 }}>
+        <Thread>
+          {shown.map((p) => (
+            <PaperItem key={p.id} p={p} />
+          ))}
+          <ThreadItem dense>
+            <Box sx={{ display: 'flex', gap: 0.75 }}>
+              <Card variant="dashed" onClick={() => setSearchOpen(true)} sx={{ flex: 1, display: 'flex', alignItems: 'center', gap: 0.75, color: brand.muted }}>
+                <TravelExploreIcon sx={{ fontSize: 16 }} /> 在线检索文献
+              </Card>
+              <Card
+                variant="dashed"
+                onClick={uploading ? undefined : () => fileRef.current?.click()}
+                sx={{ flex: 1, display: 'flex', alignItems: 'center', gap: 0.75, color: brand.muted }}
+              >
+                {uploading ? <CircularProgress size={14} /> : <UploadFileIcon sx={{ fontSize: 16 }} />} 上传 PDF
+              </Card>
+            </Box>
+            <input ref={fileRef} type="file" accept=".pdf,.txt,.md" multiple hidden onChange={(e) => e.target.files && upload(e.target.files).then(() => (e.target.value = ''))} />
+          </ThreadItem>
+        </Thread>
+        {!papers.length && (
+          <Typography sx={{ fontSize: 12.5, color: brand.muted, mt: 1, lineHeight: 1.7 }}>
+            文献库还是空的。可以在线检索、上传 PDF，或者让「AI 助手」里的综述 Agent 帮你找文献。
+          </Typography>
+        )}
+      </Box>
+      <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
+    </Box>
+  )
+}

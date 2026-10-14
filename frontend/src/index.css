@@ -1,0 +1,151 @@
+:root {
+  --paper-font: Roboto, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', Arial, sans-serif;
+  --blue: #0078d4;
+  --line: rgba(0, 0, 0, 0.1);
+  --sash-hover-size: 2px;
+  --focus-border: #0078d4;
+  --separator-border: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #fff;
+}
+
+/* ---------- 文档区 ---------- */
+.paper-sheet {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 28px 72px 96px;
+  box-sizing: border-box;
+}
+
+.paper-body {
+  outline: none;
+  font-family: var(--paper-font);
+  font-size: 16px;
+  line-height: 1.9;
+  color: #333;
+  min-height: 360px;
+}
+.paper-body p {
+  margin: 0 0 1em;
+}
+.paper-body h1,
+.paper-body h2,
+.paper-body h3 {
+  color: #242424;
+  line-height: 1.35;
+  font-weight: 700;
+}
+.paper-body h1 {
+  font-size: 22px;
+  margin: 1.5em 0 0.55em;
+}
+.paper-body h2 {
+  font-size: 18px;
+  margin: 1.3em 0 0.5em;
+}
+.paper-body h3 {
+  font-size: 16px;
+  margin: 1.1em 0 0.4em;
+}
+.paper-body > :first-child {
+  margin-top: 0.3em;
+}
+.paper-body blockquote {
+  margin: 0 0 1em;
+  padding: 4px 16px;
+  border-left: 3px solid rgba(0, 120, 212, 0.45);
+  color: #555;
+  background: #fafafa;
+}
+.paper-body ul,
+.paper-body ol {
+  padding-left: 1.6em;
+}
+.paper-body em {
+  color: #757575;
+}
+.paper-body strong {
+  color: #242424;
+}
+.paper-body .is-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #b0b0b0;
+  pointer-events: none;
+  height: 0;
+  font-size: 15px;
+}
+
+/* ---------- 引用标记 ---------- */
+.cite-chip {
+  color: #0067b8;
+  border-radius: 3px;
+  padding: 0 1px;
+  cursor: pointer;
+  font-size: 0.9em;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.cite-chip:hover {
+  background: rgba(0, 120, 212, 0.1);
+}
+.cite-chip.is-selected {
+  background: rgba(0, 120, 212, 0.14);
+  outline: 1px solid rgba(0, 120, 212, 0.5);
+}
+.cite-chip.is-missing {
+  color: #a4262c;
+  background: rgba(164, 38, 44, 0.08);
+}
+
+/* ---------- Copilot 灰色续写 ---------- */
+.ghost-text {
+  color: #a6a6a6;
+  pointer-events: none;
+}
+.ghost-hint {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-family: Roboto, sans-serif;
+  font-size: 10px;
+  line-height: 16px;
+  color: #8a8a8a;
+  border: 1px solid #dcdcdc;
+  border-radius: 4px;
+  background: #fafafa;
+  vertical-align: 2px;
+}
+
+.ProseMirror-selectednode {
+  outline: none;
+}
+
+/* ---------- 滚动条 ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.14);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.24);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 分栏拖拽条 */
+.sash-hover,
+.split-view-sash:hover {
+  background: rgba(0, 120, 212, 0.5) !important;
+}

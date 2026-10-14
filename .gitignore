@@ -224,3 +224,9 @@ __marimo__/
 
 # uv
 uv.lock
+# ---- Ariadne 论文写作助手 ----
+node_modules/
+frontend/dist/
+backend/data/
+chroma_db/
+*.tsbuildinfo

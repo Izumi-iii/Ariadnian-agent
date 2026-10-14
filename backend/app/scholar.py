@@ -1,0 +1,220 @@
+"""外部学术检索：arXiv + Semantic Scholar，结果统一成 PaperIn，并按 DOI/arXiv/标题去重。"""
+from __future__ import annotations
+
+import re
+import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+import httpx
+
+from .config import get_settings
+from .library import PaperIn, normalize_title
+
+_UA = {"User-Agent": "Ariadne-paper-assistant/0.1 (local research tool)"}
+_ATOM = {"a": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+
+
+def search_arxiv(query: str, limit: int = 10) -> list[PaperIn]:
+    params = {"search_query": f"all:{query}", "start": 0, "max_results": limit, "sortBy": "relevance"}
+    r = httpx.get("https://export.arxiv.org/api/query", params=params, headers=_UA, timeout=30, follow_redirects=True)
+    r.raise_for_status()
+    root = ET.fromstring(r.text)
+    out: list[PaperIn] = []
+    for e in root.findall("a:entry", _ATOM):
+        abs_url = (e.findtext("a:id", default="", namespaces=_ATOM) or "").strip()
+        arxiv_id = abs_url.rsplit("/abs/", 1)[-1] if "/abs/" in abs_url else None
+        pdf_url = None
+        for link in e.findall("a:link", _ATOM):
+            if link.get("title") == "pdf":
+                pdf_url = link.get("href")
+        published = e.findtext("a:published", default="", namespaces=_ATOM) or ""
+        doi = e.findtext("arxiv:doi", default=None, namespaces=_ATOM)
+        venue = e.findtext("arxiv:journal_ref", default=None, namespaces=_ATOM)
+        out.append(
+            PaperIn(
+                title=re.sub(r"\s+", " ", e.findtext("a:title", default="", namespaces=_ATOM)).strip(),
+                authors=[a.findtext("a:name", default="", namespaces=_ATOM) for a in e.findall("a:author", _ATOM)],
+                year=int(published[:4]) if published[:4].isdigit() else None,
+                venue=venue,
+                doi=doi,
+                arxiv_id=arxiv_id,
+                url=abs_url or None,
+                pdf_url=pdf_url,
+                abstract=re.sub(r"\s+", " ", e.findtext("a:summary", default="", namespaces=_ATOM)).strip(),
+                source="arxiv",
+            )
+        )
+    return out
+
+
+def search_semantic_scholar(query: str, limit: int = 10) -> list[PaperIn]:
+    fields = "title,authors,year,venue,externalIds,url,abstract,openAccessPdf,citationCount"
+    headers = dict(_UA)
+    key = get_settings().semantic_scholar_api_key
+    if key:
+        headers["x-api-key"] = key
+    r = httpx.get(
+        "https://api.semanticscholar.org/graph/v1/paper/search",
+        params={"query": query, "limit": limit, "fields": fields},
+        headers=headers,
+        timeout=30,
+    )
+    r.raise_for_status()
+    out: list[PaperIn] = []
+    for d in r.json().get("data", []) or []:
+        ext = d.get("externalIds") or {}
+        pdf = (d.get("openAccessPdf") or {}).get("url")
+        arxiv_id = ext.get("ArXiv")
+        out.append(
+            PaperIn(
+                title=d.get("title") or "",
+                authors=[a.get("name", "") for a in d.get("authors") or []],
+                year=d.get("year"),
+                venue=d.get("venue") or None,
+                doi=ext.get("DOI"),
+                arxiv_id=arxiv_id,
+                url=d.get("url"),
+                pdf_url=pdf or (f"https://arxiv.org/pdf/{arxiv_id}" if arxiv_id else None),
+                abstract=d.get("abstract"),
+                source="semantic_scholar",
+                citation_count=d.get("citationCount"),
+            )
+        )
+    return out
+
+
+def _merge(a: PaperIn, b: PaperIn) -> PaperIn:
+    data = a.model_dump()
+    for k, v in b.model_dump().items():
+        if data.get(k) in (None, "", []) and v not in (None, "", []):
+            data[k] = v
+    return PaperIn(**data)
+
+
+def dedupe(papers: list[PaperIn]) -> list[PaperIn]:
+    out: list[PaperIn] = []
+    index: dict[str, int] = {}
+    for p in papers:
+        if not p.title:
+            continue
+        keys = [f"t:{normalize_title(p.title)}"]
+        if p.doi:
+            keys.append(f"d:{p.doi.lower()}")
+        if p.arxiv_id:
+            keys.append(f"a:{p.arxiv_id.split('v')[0]}")
+        hit = next((index[k] for k in keys if k in index), None)
+        if hit is None:
+            out.append(p)
+            hit = len(out) - 1
+        else:
+            out[hit] = _merge(out[hit], p)
+        for k in keys:
+            index[k] = hit
+    return out
+
+
+def search(query: str, sources: list[str] | None = None, limit: int = 8) -> tuple[list[PaperIn], list[str]]:
+    """并发检索多个来源；返回 (结果, 错误信息列表)。单个来源失败不影响其他来源。"""
+    if get_settings().llm_fake:
+        return demo_search(query, limit), []
+    sources = sources or ["semantic_scholar", "arxiv"]
+    fns = {"arxiv": search_arxiv, "semantic_scholar": search_semantic_scholar}
+    results: list[PaperIn] = []
+    errors: list[str] = []
+    with ThreadPoolExecutor(max_workers=len(sources)) as ex:
+        futures = {src: ex.submit(fns[src], query, limit) for src in sources if src in fns}
+        for src, fut in futures.items():
+            try:
+                results.extend(fut.result())
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{src}: {e}")
+    return dedupe(results), errors
+
+
+def download_pdf(url: str, dest: Path) -> Path:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with httpx.stream("GET", url, headers=_UA, timeout=60, follow_redirects=True) as r:
+        r.raise_for_status()
+        ctype = r.headers.get("content-type", "")
+        with open(dest, "wb") as f:
+            for chunk in r.iter_bytes():
+                f.write(chunk)
+    with open(dest, "rb") as f:
+        if f.read(5) != b"%PDF-":
+            dest.unlink(missing_ok=True)
+            raise ValueError(f"下载的不是 PDF（content-type: {ctype}）")
+    return dest
+
+
+# ---------------------------------------------------------------------------
+# 离线演示数据（LLM_FAKE=1 时使用；均为真实论文的元数据）
+# ---------------------------------------------------------------------------
+_DEMO = [
+    PaperIn(
+        title="Attention Is All You Need",
+        authors=["Ashish Vaswani", "Noam Shazeer", "Niki Parmar", "Jakob Uszkoreit", "Llion Jones",
+                 "Aidan N. Gomez", "Lukasz Kaiser", "Illia Polosukhin"],
+        year=2017, venue="NeurIPS", arxiv_id="1706.03762", url="https://arxiv.org/abs/1706.03762",
+        pdf_url="https://arxiv.org/pdf/1706.03762",
+        abstract="The dominant sequence transduction models are based on complex recurrent or convolutional neural "
+        "networks. We propose a new simple network architecture, the Transformer, based solely on attention "
+        "mechanisms, dispensing with recurrence and convolutions entirely.",
+        source="demo", citation_count=100000,
+    ),
+    PaperIn(
+        title="Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+        authors=["Patrick Lewis", "Ethan Perez", "Aleksandra Piktus", "Fabio Petroni", "Vladimir Karpukhin",
+                 "Naman Goyal", "Heinrich Küttler", "Mike Lewis", "Wen-tau Yih", "Tim Rocktäschel",
+                 "Sebastian Riedel", "Douwe Kiela"],
+        year=2020, venue="NeurIPS", arxiv_id="2005.11401", url="https://arxiv.org/abs/2005.11401",
+        pdf_url="https://arxiv.org/pdf/2005.11401",
+        abstract="Large pre-trained language models store factual knowledge in their parameters, but their ability "
+        "to access and precisely manipulate knowledge is limited. We explore retrieval-augmented generation (RAG) "
+        "models which combine pre-trained parametric and non-parametric memory for language generation.",
+        source="demo",
+    ),
+    PaperIn(
+        title="ReAct: Synergizing Reasoning and Acting in Language Models",
+        authors=["Shunyu Yao", "Jeffrey Zhao", "Dian Yu", "Nan Du", "Izhak Shafran", "Karthik Narasimhan", "Yuan Cao"],
+        year=2023, venue="ICLR", arxiv_id="2210.03629", url="https://arxiv.org/abs/2210.03629",
+        pdf_url="https://arxiv.org/pdf/2210.03629",
+        abstract="We explore the use of LLMs to generate both reasoning traces and task-specific actions in an "
+        "interleaved manner, allowing for greater synergy between the two.",
+        source="demo",
+    ),
+    PaperIn(
+        title="Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection",
+        authors=["Akari Asai", "Zeqiu Wu", "Yizhong Wang", "Avirup Sil", "Hannaneh Hajishirzi"],
+        year=2024, venue="ICLR", arxiv_id="2310.11511", url="https://arxiv.org/abs/2310.11511",
+        pdf_url="https://arxiv.org/pdf/2310.11511",
+        abstract="We introduce Self-Reflective Retrieval-Augmented Generation (Self-RAG), which enhances an LM's "
+        "quality and factuality through retrieval and self-reflection.",
+        source="demo",
+    ),
+    PaperIn(
+        title="Dense Passage Retrieval for Open-Domain Question Answering",
+        authors=["Vladimir Karpukhin", "Barlas Oguz", "Sewon Min", "Patrick Lewis", "Ledell Wu", "Sergey Edunov",
+                 "Danqi Chen", "Wen-tau Yih"],
+        year=2020, venue="EMNLP", arxiv_id="2004.04906", doi="10.18653/v1/2020.emnlp-main.550",
+        url="https://arxiv.org/abs/2004.04906", pdf_url="https://arxiv.org/pdf/2004.04906",
+        abstract="We show that retrieval can be practically implemented using dense representations alone, where "
+        "embeddings are learned from a small number of questions and passages by a simple dual-encoder framework.",
+        source="demo",
+    ),
+    PaperIn(
+        title="BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+        authors=["Jacob Devlin", "Ming-Wei Chang", "Kenton Lee", "Kristina Toutanova"],
+        year=2019, venue="NAACL", arxiv_id="1810.04805", doi="10.18653/v1/N19-1423",
+        url="https://arxiv.org/abs/1810.04805", pdf_url="https://arxiv.org/pdf/1810.04805",
+        abstract="We introduce a new language representation model called BERT, designed to pre-train deep "
+        "bidirectional representations from unlabeled text by jointly conditioning on both left and right context.",
+        source="demo",
+    ),
+]
+
+
+def demo_search(query: str, limit: int) -> list[PaperIn]:
+    q = set(re.findall(r"[a-z]+", query.lower()))
+    scored = sorted(_DEMO, key=lambda p: -len(q & set(re.findall(r"[a-z]+", (p.title + " " + (p.abstract or "")).lower()))))
+    return [p.model_copy() for p in scored[:limit]]
