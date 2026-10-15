@@ -2,7 +2,7 @@
 //   npm run desktop              构建前端 → PyInstaller 打包后端 → electron-builder 生成安装包（desktop/dist/）
 //   npm run desktop -- --dev     不打包，直接用 Electron 窗口运行当前源码，方便调试
 // 版本号取自根目录 package.json，也可以用环境变量 ARIADNE_VERSION 覆盖
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BACKEND, FRONTEND, ROOT, ensureInstalled, log, paint, requireTools, run } from './lib.mjs'
 
@@ -43,5 +43,13 @@ run(
 )
 
 log('打包桌面应用')
+// electron-builder 默认用 npm list 收集依赖，Windows 上它会经 powershell.exe 启动 npm，部分环境（如 Volta）会报
+// spawn powershell.exe ENOENT。桌面壳没有运行时依赖，改成直接遍历 node_modules（packageManager: traversal）
+const pkgPath = join(ELECTRON, 'package.json')
+const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+if (pkg.packageManager !== 'traversal') {
+  writeFileSync(pkgPath, JSON.stringify({ ...pkg, packageManager: 'traversal' }, null, 2) + '\n')
+  log('已在 desktop/electron/package.json 中设置 "packageManager": "traversal"')
+}
 run('npx', ['electron-builder', '--publish', 'never', `-c.extraMetadata.version=${version}`], { cwd: ELECTRON, env })
 log(`完成：${paint('web', join(ROOT, 'desktop', 'dist'))}`)
