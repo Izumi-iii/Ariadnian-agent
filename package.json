@@ -7,7 +7,8 @@
     "dev": "node scripts/dev.mjs",
     "demo": "node scripts/dev.mjs --demo",
     "start": "node scripts/start.mjs",
-    "test": "node scripts/test.mjs"
+    "test": "node scripts/test.mjs",
+    "eval": "node scripts/eval.mjs"
   },
   "engines": {
     "node": ">=20"

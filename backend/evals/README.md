@@ -1,0 +1,53 @@
+# 测评
+
+衡量 Ariadne 里所有「由模型做判断」的环节到底靠不靠谱。测评直接调用系统里真实在用的函数（`assist.judge_support`、`assist.verify_citation`、`retrieval.search`、`assist._review`、`assist.complete`），换模型、改 prompt 之后跑一遍就知道是变好还是变坏。
+
+```bash
+npm run eval                                   # 用网页「设置」里配置的模型，跑全部测评
+npm run eval -- --limit 30                     # 每项只取 30 条，几分钟内出结果
+npm run eval -- --model deepseek/deepseek-chat # 临时换成别的模型做对比（Key 仍用设置里的）
+npm run eval -- --tasks judge,fake_cite        # 只跑部分任务
+npm run eval -- --offline                      # 不调用模型，只跑离线基线
+```
+
+- 测评在临时数据目录里进行，不会改动你的文献库、论文和用量统计。
+- 结果保存在 [`results/`](results/)，每次一个 JSON；[`results/README.md`](results/README.md) 是自动生成的对比表。
+- 全量一次约 900 次模型调用（以 judge 档为主，每次几百 token），用 DeepSeek 这类模型通常只要几元钱；可以先用 `--limit 30` 试跑。
+
+## 测什么
+
+| 任务 | 对应功能 | 做法 | 主要指标 |
+|---|---|---|---|
+| `judge` 引用判断 | 找引用、页边批注 | 给定论断和一段文献原文，判断 supports / partial / unrelated | 准确率、**假支持率**（撑不起的证据被判成“支持”）、漏判支持率 |
+| `judge` · 中文论断 | 同上 | 中文论断 + 英文原文（真实使用场景），正例与随机错配负例各半 | 准确率、假支持率 |
+| `fake_cite` 假引用检出 | 页边批注的引用核查 | 把正确引用换成 ① 随机另一篇 ② **难例**：检索排名最靠前、主题相近但并不支撑这句话的另一篇；走 `verify_citation` 同一条路径 | 检出率（标红）、含黄色提示的检出率、正确引用的误报率 |
+| `retrieval` 检索 | 找引用、文献问答 | 在 1,489 段语料里为论断找支撑文献；英文 / 中文 / 中文 + 跨语言关键词扩展；配置了向量检索时再测混合检索 | Recall@1/5/10、MRR@10 |
+| `missing` 缺引用检测 | 页边批注「这句话缺少引用」 | 20 段中文研究报告段落逐句标注是否需要引用；过滤规则与 `annotate()` 完全一致（每段最多 2 句、必须原样摘录） | 句级 Precision / Recall / F1 |
+| `latency` 延迟与花费 | 行内续写 | 20 次真实续写请求；另外汇总本次测评所有模型调用 | 续写 P50/P95、各档调用次数、错误率、token、花费 |
+
+“标红”指判定为 unrelated（页边卡片红色），“含黄色”指判定不是 supports（红色或黄色卡片都会提醒用户）。
+
+## 数据
+
+| 数据 | 来源 | 规模 | 位置 |
+|---|---|---|---|
+| SciFact 论断—证据对 | Wadden et al., *Fact or Fiction: Verifying Scientific Claims*, EMNLP 2020；使用 [COVID-Fact 仓库](https://github.com/asaakyan/covidfact)（Saakyan et al., ACL 2021）整理的 RTE 格式 dev 集 | 209 对（138 支持 / 71 不支持） | 首次运行时自动下载到 `evals/.cache/`（CC BY-NC 2.0，不放进仓库） |
+| 检索干扰项 | 同上仓库的 SciFact test 证据 + COVID-Fact 证据 | 去重后共 1,489 段语料 | 同上 |
+| 中文论断 | 60 条 SciFact 论断的中文译文 | 60 条 | `data/zh_claims.jsonl` |
+| 中文缺引用 | 本项目编写并逐句标注的研究报告段落（计算机、农学等课题） | 20 段 / 72 句，其中 26 句需要引用 | `data/zh_citeworthy.jsonl` |
+| 冒烟样例 | 手写 | 6 条 | `data/fixture.jsonl`（`--source fixture`，不联网） |
+
+GitHub raw 连不上时会自动改用 jsDelivr 镜像；都失败的话，按提示手动下载文件放进 `evals/.cache/` 即可。
+
+## 离线基线
+
+`--offline` 不调用任何模型，用离线演示模式里的规则代替：引用判断按关键词重合数（≥3 个算支持，≥1 个算部分支持），缺引用检测标出段落里第一句较长的句子。它是模型结果的下限参照：
+
+- 关键词规则对 SciFact 的**假支持率约 51%**，难例假引用**一条都标不红**——这正是需要模型判断的原因；
+- 纯 BM25 用中文论断检索英文文献，Recall@5 只有约 27%（命中的基本是基因名这类英文术语），英文论断则有约 85%——跨语言关键词扩展要把中文拉近英文水平才算有效。
+
+## 已知局限
+
+- SciFact 是生物医学领域，和课程报告的领域不同；证据是摘要里的句子，不是全文片段。
+- 中文缺引用集规模小，标注带有主观性，适合看趋势和比较模型，不适合当作精确的绝对值。建议按自己的学科补充段落。
+- `judge` 的标签只有“支持 / 不支持”，SciFact 里“反驳”和“信息不足”都归入“不支持”。

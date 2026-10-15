@@ -1,0 +1,146 @@
+{
+  "created": "2026-10-15T05:54:35",
+  "mode": "offline",
+  "models": {
+    "complete": "deepseek/deepseek-chat",
+    "write": "deepseek/deepseek-chat",
+    "judge": "deepseek/deepseek-chat",
+    "agent": "deepseek/deepseek-chat"
+  },
+  "embeddings": null,
+  "source": "scifact",
+  "limit": null,
+  "data": {
+    "pairs": 209,
+    "corpus": 1489,
+    "zh_claims": 60,
+    "citeworthy_paragraphs": 20
+  },
+  "tasks": {
+    "judge": {
+      "n": 209,
+      "n_supported": 138,
+      "n_not_supported": 71,
+      "accuracy": 0.569,
+      "support_precision": 0.7,
+      "support_recall": 0.609,
+      "support_f1": 0.651,
+      "false_support_rate": 0.507,
+      "missed_support_rate": 0.043,
+      "unknown_rate": 0.0,
+      "confusion": {
+        "supported": {
+          "supports": 84,
+          "partial": 48,
+          "unrelated": 6
+        },
+        "not_supported": {
+          "supports": 36,
+          "unrelated": 8,
+          "partial": 27
+        }
+      },
+      "zh": {
+        "n": 136,
+        "n_supported": 68,
+        "n_not_supported": 68,
+        "accuracy": 0.507,
+        "support_precision": 1.0,
+        "support_recall": 0.015,
+        "support_f1": 0.03,
+        "false_support_rate": 0.0,
+        "missed_support_rate": 0.662,
+        "unknown_rate": 0.0,
+        "confusion": {
+          "supported": {
+            "partial": 22,
+            "supports": 1,
+            "unrelated": 45
+          },
+          "not_supported": {
+            "unrelated": 64,
+            "partial": 4
+          }
+        }
+      },
+      "seconds": 4.0
+    },
+    "fake_cite": {
+      "true": {
+        "n": 138,
+        "flagged_red": 0.043,
+        "flagged_any": 0.391,
+        "verdicts": {
+          "supports": 84,
+          "partial": 48,
+          "unrelated": 6
+        }
+      },
+      "random_fake": {
+        "n": 138,
+        "flagged_red": 0.855,
+        "flagged_any": 0.993,
+        "verdicts": {
+          "unrelated": 118,
+          "partial": 19,
+          "supports": 1
+        }
+      },
+      "hard_fake": {
+        "n": 138,
+        "flagged_red": 0.0,
+        "flagged_any": 0.558,
+        "verdicts": {
+          "supports": 61,
+          "partial": 77
+        }
+      },
+      "headline": {
+        "detect_random": 0.855,
+        "detect_hard": 0.0,
+        "detect_hard_any": 0.558,
+        "false_alarm_red": 0.043,
+        "false_alarm_any": 0.391
+      },
+      "seconds": 21.0
+    },
+    "retrieval": {
+      "corpus_size": 1489,
+      "embeddings": false,
+      "en_bm25": {
+        "recall@1": 0.71,
+        "recall@5": 0.847,
+        "recall@10": 0.887,
+        "mrr@10": 0.779,
+        "n": 124
+      },
+      "zh_bm25": {
+        "recall@1": 0.267,
+        "recall@5": 0.267,
+        "recall@10": 0.283,
+        "mrr@10": 0.269,
+        "n": 60
+      },
+      "seconds": 0.6
+    },
+    "missing": {
+      "paragraphs": 20,
+      "sentences": 72,
+      "gold_positive": 26,
+      "flagged": 20,
+      "precision": 0.4,
+      "recall": 0.308,
+      "f1": 0.348,
+      "tp": 8,
+      "fp": 12,
+      "fn": 18,
+      "seconds": 0.0
+    },
+    "latency": {
+      "skipped": "离线模式不测延迟",
+      "seconds": 0.0
+    }
+  },
+  "llm_usage": {},
+  "seconds": 25.7
+}

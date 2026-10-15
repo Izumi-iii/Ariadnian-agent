@@ -96,7 +96,8 @@ npm run dev       # 开发：后端 :8000 + 前端 :5173 一起启动，热更�
 | `npm run dev` | 开发模式，前后端同时启动 |
 | `npm run demo` | 同上，但设置 `LLM_FAKE=1`：不调用模型、不需要 API key，适合演示和调界面 |
 | `npm start` | 生产模式：前端有改动才重新构建，由后端单端口提供服务 http://localhost:8000 |
-| `npm test` | 后端测试（20 个，离线）+ 前端类型检查 |
+| `npm test` | 后端测试（23 个，离线）+ 前端类型检查 |
+| `npm run eval` | 测评引用判断、假引用检出、检索、缺引用检测和续写延迟，见下文「测评」 |
 
 依赖没装时 `dev` / `demo` / `start` 会自动先执行一次 `setup`。设置环境变量 `NO_OPEN=1` 可以不自动打开浏览器，`PORT` 可以修改 `npm start` 的端口。
 
@@ -123,6 +124,26 @@ npm run dev       # 开发：后端 :8000 + 前端 :5173 一起启动，热更�
 - **中文写作 + 英文文献**：系统会把中文句子转换成英文关键词，再和原句一起检索。条件允许的话，建议再开启多语言向量模型（例如 `EMBEDDING_PROVIDER=ollama`、`EMBEDDING_MODEL=bge-m3`）。
 - **学术检索与限流**：Semantic Scholar 不配 key 时与所有匿名用户共享配额，高峰期经常返回 429，强烈建议免费申请 `SEMANTIC_SCHOLAR_API_KEY`。检索层会自动处理：同一来源的请求限速（S2 每秒 1 次、arXiv 3 秒 1 次），429/5xx 按 Retry-After 或指数退避重试 3 次，仍失败就冷却 60 秒并改用 OpenAlex 补位（可选 `OPENALEX_API_KEY`），结果缓存 7 天（`SEARCH_CACHE_DAYS`）。
 
+## 测评
+
+`npm run eval` 用网页里配置的模型跑一遍测评，结果写进 [`backend/evals/results/`](backend/evals/results/README.md)，换模型或改 prompt 之后可以直接对比。测的都是系统里真实在用的函数：
+
+| 测评 | 数据 | 关键指标 |
+|---|---|---|
+| 引用判断 | SciFact 209 对论断—证据（英文），以及中文论断 + 英文原文 | 准确率、**假支持率**（撑不起的证据被判成“支持”） |
+| 假引用检出 | 把正确引用换成随机文献 / 主题相近的难例文献 | 检出率、正确引用误报率 |
+| 检索 | 1,489 段语料，英文 / 中文 / 中文 + 跨语言关键词扩展 | Recall@5、MRR |
+| 缺引用检测 | 20 段中文研究报告、72 句逐句标注 | Precision / Recall / F1 |
+| 延迟与花费 | 20 次行内续写 + 本次全部模型调用 | P50 / P95、token、花费 |
+
+不调用模型的离线基线（关键词规则 + 纯 BM25，`npm run eval -- --offline`）：
+
+| 引用判断准确率 | 假支持率 ↓ | 假引用检出（随机 / 难例） | 正确引用误报 ↓ | 检索 R@5（英文 / 中文） | 缺引用 F1 |
+|---|---|---|---|---|---|
+| 56.9% | 50.7% | 85.5% / 0.0% | 4.3% | 84.7% / 26.7% | 34.8% |
+
+关键词规则会把一半撑不起论断的证据判成“支持”，难例假引用一条都标不出来；中文论断直接检索英文文献，Recall@5 只有英文的三分之一。这些是模型判断和跨语言扩展要跨过的线。各项定义、数据来源和局限见 [backend/evals/README.md](backend/evals/README.md)。
+
 ## 目录
 
 ```
@@ -141,9 +162,11 @@ backend/
     assist.py          续写、改写、找引用、核查、问答
     agent/graph.py     LangGraph 综述→大纲工作流
     routers/           API 路由
+  evals/             测评：数据、任务、指标，结果存在 evals/results/
   tests/
-package.json         一键命令（setup / dev / demo / start / test）
+package.json         一键命令（setup / dev / demo / start / test / eval）
 scripts/             启动脚本，只用 Node 内置模块，Windows / macOS / Linux 通用
+docs/                架构图（gen_architecture.py 生成）、界面截图、布局草图（layouts/）
 frontend/
   src/
     editor/            TipTap 编辑器与扩展（引用节点、@ 引用、灰色续写、选区改写、页边批注、悬浮目录）
@@ -156,6 +179,7 @@ frontend/
 
 - [ ] 分节写作 Agent：按大纲逐节生成草稿，每节单独检索，写完自动跑一遍引用核查
 - [ ] 审稿 Agent：模拟审稿人挑逻辑和论据问题，带有限轮次的修改循环
-- [ ] 评测集：统计虚假引用率、引用支撑率，对比开启/关闭核查的效果
+- [x] 测评：引用判断、假引用检出、检索、缺引用检测、延迟与花费
+- [ ] 测评扩展：更多学科的中文段落、全文片段级的引用核查、端到端写作任务
 - [ ] GROBID / MinerU 解析，提升双栏排版和中文 PDF 的解析质量
 - [ ] docx 导出（pandoc）、图表与公式节点
