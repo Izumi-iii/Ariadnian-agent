@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -58,11 +59,14 @@ def llm_stats(days: int = 30):
 
 
 # 生产模式：前端 build 后由后端直接托管（npm run build → frontend/dist）
-_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
-if _dist.exists():
+# 桌面版打包后目录结构不同，由启动器通过 ARIA_FRONTEND_DIST 指定
+_dist = Path(os.getenv("ARIA_FRONTEND_DIST") or Path(__file__).resolve().parents[2] / "frontend" / "dist").resolve()
+if (_dist / "index.html").exists():
     app.mount("/assets", StaticFiles(directory=_dist / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
     def spa(path: str):
-        f = _dist / path
-        return FileResponse(f if path and f.is_file() else _dist / "index.html")
+        f = (_dist / path).resolve()
+        # 只返回 dist 目录里的文件，防止 ../ 越界
+        ok = path and f.is_file() and f.is_relative_to(_dist)
+        return FileResponse(f if ok else _dist / "index.html")

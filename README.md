@@ -109,8 +109,24 @@ npm run dev       # 开发：后端 :8000 + 前端 :5173 一起启动，热更�
 | `npm start` | 生产模式：前端有改动才重新构建，由后端单端口提供服务 http://localhost:8000 |
 | `npm test` | 后端测试（24 个，离线）+ 前端类型检查 |
 | `npm run eval` | 测评引用判断、假引用检出、检索、缺引用检测和续写延迟，见下文「测评」 |
+| `npm run desktop` | 打包桌面版（见下文「桌面版」）；加 `-- --dev` 则不打包、直接以桌面窗口运行 |
 
 依赖没装时 `dev` / `demo` / `start` 会自动先执行一次 `setup`。设置环境变量 `NO_OPEN=1` 可以不自动打开浏览器，`PORT` 可以修改 `npm start` 的端口。
+
+## 桌面版
+
+不想开命令行和浏览器的话，可以打包成桌面程序：双击打开就是一个独立窗口，关掉窗口就完全退出。
+
+```bash
+npm run desktop          # 构建前端 → PyInstaller 打包 → desktop/dist/Ariadne/Ariadne.exe
+npm run desktop -- --dev # 不打包，直接用桌面窗口运行当前代码（调试用）
+```
+
+- **安装程序**：Windows 上装了 [Inno Setup](https://jrsoftware.org/isinfo.php)（`winget install JRSoftware.InnoSetup`）时，会自动生成 `desktop/dist/Ariadne-Setup-<版本>.exe`。安装到当前用户目录，不需要管理员权限。
+- **数据位置**：文献库、论文、设置保存在 `%APPDATA%\Ariadne`（macOS 为 `~/Library/Application Support/Ariadne`）。卸载或升级都不会删除，日志在其中的 `logs/desktop.log`。它和 `npm run dev` 用的 `backend/data` 是分开的，想沿用已有的文献库，把 `backend/data` 里的文件复制过去即可。
+- **实现方式**：启动器 `desktop/launcher.py` 在后台线程里运行 FastAPI，后端只监听 `127.0.0.1` 的随机空闲端口，再用 [pywebview](https://pywebview.flowrl.com/) 打开系统自带的 WebView2 窗口。同一时间只运行一个实例，再次双击会唤起已有窗口。
+- **体积**：程序目录约 350 MB，大头是 LiteLLM、PyMuPDF 和 numpy。
+- **首次运行提示**：安装包没有代码签名，Windows 可能提示「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」即可。Windows 10 若缺少 WebView2 运行时，需要先从微软官网安装，Windows 11 已自带。
 
 ## 配置要点
 
@@ -183,8 +199,9 @@ backend/
     routers/           API 路由
   evals/             测评：数据、任务、指标，结果存在 evals/results/
   tests/
-package.json         一键命令（setup / dev / demo / start / test / eval）
+package.json         一键命令（setup / dev / demo / start / test / eval / desktop）
 scripts/             启动脚本，只用 Node 内置模块，Windows / macOS / Linux 通用
+desktop/             桌面版：启动器（pywebview）、PyInstaller 配置、Windows 安装程序脚本
 docs/                架构图（gen_architecture.py 生成）、界面截图、布局草图（layouts/）
 frontend/
   src/

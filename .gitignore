@@ -230,3 +230,9 @@ frontend/dist/
 backend/data/
 chroma_db/
 *.tsbuildinfo
+Claude output/
+
+# 桌面版：打包产物不提交，打包配置要提交（上面的 *.spec 规则会忽略它）
+desktop/dist/
+desktop/build/
+!desktop/ariadne.spec
