@@ -1,9 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller 打包配置：npm run desktop（或在 backend 目录执行
-#   uv run --with pyinstaller --with pywebview pyinstaller ../desktop/ariadne.spec）
-# 产物：desktop/dist/Ariadne/（单目录，启动快；再由 installer.iss 做成安装程序）
+# 桌面版后端的 PyInstaller 打包配置（由 npm run desktop 调用，也可以在 backend 目录执行
+#   uv run --with pyinstaller pyinstaller ../desktop/ariadne.spec）
+# 产物：desktop/dist/ariadne-server/（单目录，启动快），再由 Electron 作为附带程序打进安装包
 import os
-import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
@@ -27,7 +26,7 @@ for pkg in ("litellm", "tiktoken"):
 datas += collect_data_files("jieba")
 
 a = Analysis(
-    [str(ROOT / "desktop" / "launcher.py")],
+    [str(ROOT / "desktop" / "server.py")],
     pathex=[str(ROOT / "backend")],
     binaries=binaries,
     datas=datas,
@@ -46,19 +45,9 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="Ariadne",
-    console=False,  # 不弹黑色命令行窗口；日志写在数据目录 logs/desktop.log
-    icon=str(ROOT / "desktop" / "ariadne.ico"),
+    name="ariadne-server",
+    console=True,  # 由 Electron 以隐藏窗口方式启动；保留控制台输出便于记录日志
+    icon=str(ROOT / "desktop" / "ariadne.ico") if os.name == "nt" else None,  # 只有 Windows 的 exe 需要图标
     upx=False,
 )
-coll = COLLECT(exe, a.binaries, a.datas, name="Ariadne", upx=False)
-
-if sys.platform == "darwin":
-    app = BUNDLE(
-        coll,
-        name="Ariadne.app",
-        icon=None,
-        bundle_identifier="io.github.tkzzzzzz6.ariadne",
-        info_plist={"CFBundleDisplayName": "Ariadne", "NSHighResolutionCapable": True,
-                    "CFBundleShortVersionString": os.getenv("ARIADNE_VERSION", "0.1.0")},
-    )
+coll = COLLECT(exe, a.binaries, a.datas, name="ariadne-server", upx=False)

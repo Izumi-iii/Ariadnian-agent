@@ -664,8 +664,8 @@ export function SettingsDialog() {
 
           {/* 底部 */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 3.5, py: 1.5, borderTop: `1px solid ${brand.lineSoft}` }}>
-            <Typography sx={{ fontSize: 11.5, color: brand.faint, flex: 1 }}>
-              保存在本机 backend/data/settings.json，优先于 .env，保存后立即生效
+            <Typography noWrap title={view?.settings_file} sx={{ fontSize: 11.5, color: brand.faint, flex: 1, minWidth: 0 }}>
+              保存在本机 {view?.settings_file ?? 'settings.json'}，优先于 .env，保存后立即生效
             </Typography>
             <Button onClick={closeSettings}>{dirty ? '放弃修改' : '关闭'}</Button>
             <Button variant="contained" onClick={save} disabled={!dirty || saving} startIcon={saving ? <CircularProgress size={14} color="inherit" /> : undefined}>

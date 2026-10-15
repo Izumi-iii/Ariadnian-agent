@@ -1,0 +1,75 @@
+# 用真实模型跑测评（手动触发）。需要先在仓库 Settings → Secrets and variables → Actions 里添加：
+#   Secret   LLM_API_KEY    模型服务的 API Key
+#   Variable LLM_API_BASE   （可选）OpenAI 兼容接口地址，DeepSeek 等官方服务不用填
+# 结果作为 Artifact 保存，并写进本次运行的摘要页。
+name: 模型测评
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 模型（LiteLLM 格式）
+        default: deepseek/deepseek-chat
+      limit:
+        description: 每项最多取多少条（留空为全量，约 900 次调用）
+        default: "30"
+      tasks:
+        description: 任务
+        default: judge,fake_cite,retrieval,missing,latency
+
+permissions:
+  contents: read
+
+env:
+  UV_DEFAULT_INDEX: https://pypi.org/simple
+  PYTHONUTF8: "1"
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_API_BASE: ${{ vars.LLM_API_BASE }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/pyproject.toml
+
+      - name: 检查 API Key
+        run: |
+          if [ -z "$LLM_API_KEY" ]; then
+            echo "::error::没有找到 LLM_API_KEY，请先在仓库的 Actions Secrets 里添加"
+            exit 1
+          fi
+
+      - name: 安装
+        run: uv python install && uv sync
+
+      - name: 运行测评
+        env:
+          MODEL: ${{ inputs.model }}
+          LIMIT: ${{ inputs.limit }}
+          TASKS: ${{ inputs.tasks }}
+        run: |
+          args=(--model "$MODEL" --tasks "$TASKS" --label "ci-$MODEL")
+          if [ -n "$LIMIT" ]; then args+=(--limit "$LIMIT"); fi
+          uv run python -m evals "${args[@]}" | tee eval-output.txt
+          {
+            echo '## 测评结果'
+            echo '```'
+            cat eval-output.txt
+            echo '```'
+            echo
+            cat evals/results/README.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: eval-results
+          path: backend/evals/results/

@@ -2,6 +2,11 @@
 
 <p align="center"><img src="./frontend/public/ariadne-512.png" width="128" alt="Ariadne"/></p>
 
+<p align="center">
+  <a href="https://github.com/tkzzzzzz6/Ariadnian-Agent/actions/workflows/ci.yml"><img src="https://github.com/tkzzzzzz6/Ariadnian-Agent/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <a href="https://github.com/tkzzzzzz6/Ariadnian-Agent/releases"><img src="https://img.shields.io/github/v/release/tkzzzzzz6/Ariadnian-Agent?include_prereleases&label=%E4%B8%8B%E8%BD%BD" alt="Release"/></a>
+</p>
+
 Ariadne 是一个帮你**快速走进一个陌生研究领域**的研究报告写作助手。它不替你写，而是把「读懂一个领域」拆成三步，让理解留在你自己脑子里：
 
 1. **AI 检索，搭出骨架**：输入感兴趣的主题，综述 Agent 检索论文、提炼要点，给出一份带出处的大纲。
@@ -109,24 +114,50 @@ npm run dev       # 开发：后端 :8000 + 前端 :5173 一起启动，热更�
 | `npm start` | 生产模式：前端有改动才重新构建，由后端单端口提供服务 http://localhost:8000 |
 | `npm test` | 后端测试（24 个，离线）+ 前端类型检查 |
 | `npm run eval` | 测评引用判断、假引用检出、检索、缺引用检测和续写延迟，见下文「测评」 |
-| `npm run desktop` | 打包桌面版（见下文「桌面版」）；加 `-- --dev` 则不打包、直接以桌面窗口运行 |
+| `npm run desktop` | 打包 Electron 桌面版（见下文「桌面版」）；加 `-- --dev` 则不打包、直接用桌面窗口运行 |
 
 依赖没装时 `dev` / `demo` / `start` 会自动先执行一次 `setup`。设置环境变量 `NO_OPEN=1` 可以不自动打开浏览器，`PORT` 可以修改 `npm start` 的端口。
 
 ## 桌面版
 
-不想开命令行和浏览器的话，可以打包成桌面程序：双击打开就是一个独立窗口，关掉窗口就完全退出。
+不想开命令行和浏览器的话，可以打包成桌面程序：双击打开就是一个独立窗口，关掉窗口就完全退出。技术路线和 Claude、Codex 的桌面端一样，用 **Electron 外壳 + 独立的后端进程**。
+
+![Windows 桌面版](docs/screenshots/desktop.png)
+
+<p align="center"><sub>Windows 桌面版实际运行：综述 Agent 生成的大纲在右侧，页边批注标出了一处撑不起论断的引用和一处缺引用的句子</sub></p>
 
 ```bash
-npm run desktop          # 构建前端 → PyInstaller 打包 → desktop/dist/Ariadne/Ariadne.exe
-npm run desktop -- --dev # 不打包，直接用桌面窗口运行当前代码（调试用）
+npm run desktop          # 构建前端 → PyInstaller 打包 Python 后端 → electron-builder 生成安装包
+npm run desktop -- --dev # 不打包，直接用 Electron 窗口运行当前源码（调试用）
 ```
 
-- **安装程序**：Windows 上装了 [Inno Setup](https://jrsoftware.org/isinfo.php)（`winget install JRSoftware.InnoSetup`）时，会自动生成 `desktop/dist/Ariadne-Setup-<版本>.exe`。安装到当前用户目录，不需要管理员权限。
-- **数据位置**：文献库、论文、设置保存在 `%APPDATA%\Ariadne`（macOS 为 `~/Library/Application Support/Ariadne`）。卸载或升级都不会删除，日志在其中的 `logs/desktop.log`。它和 `npm run dev` 用的 `backend/data` 是分开的，想沿用已有的文献库，把 `backend/data` 里的文件复制过去即可。
-- **实现方式**：启动器 `desktop/launcher.py` 在后台线程里运行 FastAPI，后端只监听 `127.0.0.1` 的随机空闲端口，再用 [pywebview](https://pywebview.flowrl.com/) 打开系统自带的 WebView2 窗口。同一时间只运行一个实例，再次双击会唤起已有窗口。
-- **体积**：程序目录约 350 MB，大头是 LiteLLM、PyMuPDF 和 numpy。
-- **首次运行提示**：安装包没有代码签名，Windows 可能提示「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」即可。Windows 10 若缺少 WebView2 运行时，需要先从微软官网安装，Windows 11 已自带。
+- **下载**：每次发布版本时，CI 会自动打包并上传到 [Releases](https://github.com/tkzzzzzz6/Ariadnian-Agent/releases)，直接下载安装即可。
+- **产物**（在 `desktop/dist/`）：Windows 为 `Ariadne-Setup-<版本>.exe` 安装程序和免安装 zip；macOS 为 dmg；Linux 为 AppImage。只能打包当前系统的版本，跨平台由 CI 分别打包。
+- **数据位置**：文献库、论文、设置保存在 `%APPDATA%\Ariadne`（macOS 为 `~/Library/Application Support/Ariadne`），卸载或升级都不会删除。日志在其中的 `logs/`（`electron.log`、`server.log`）。它和 `npm run dev` 用的 `backend/data` 是分开的，想沿用已有的文献库，把 `backend/data` 里的文件复制过去即可。
+- **工作方式**：Electron 主进程（`desktop/electron/main.js`）先显示启动页，分配一个空闲端口，启动打包好的后端 `ariadne-server`（`desktop/server.py`，只监听 `127.0.0.1`），等健康检查通过后加载页面。同一时间只运行一个实例；关闭窗口时结束后端，后端也会在 Electron 意外退出后自行退出。外部链接用系统浏览器打开，导出文件弹出「另存为」。
+- **为什么是 Electron**：编辑器重度依赖可编辑区域、选区和输入法，Electron 在所有平台上都是同一个 Chromium 内核，表现一致；Tauri 和 pywebview 用的是系统 WebView，在 macOS（WebKit）和 Linux（WebKitGTK）上需要分别适配。
+- **体积**：安装包约 250 MB，其中 Python 后端（LiteLLM、PyMuPDF、numpy 等）约占四分之三。
+- **下载加速**：本地打包时 Electron 相关的二进制默认从 npmmirror 镜像下载；设置 `CI=1` 时改用官方源。
+- **首次运行提示**：安装包没有代码签名，Windows 可能提示「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」即可。
+
+## CI/CD
+
+GitHub Actions 配置在 `.github/workflows/`：
+
+| 工作流 | 触发 | 做什么 |
+|---|---|---|
+| `ci.yml` | 每次 push / PR | 后端单元测试（Ubuntu + Windows）、测评冒烟（离线）、前端类型检查与构建 |
+| `release.yml` | 推送 `v*` 标签 | 在 Windows、macOS、Linux 上分别打包桌面版，自动创建 Release 并上传安装包；也可以手动运行，只打包不发布 |
+| `eval.yml` | 手动 | 用真实模型跑测评，结果写进运行摘要并保存为 Artifact；需要在仓库 Secrets 里添加 `LLM_API_KEY` |
+
+发布新版本：
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+几分钟后 Releases 页面会出现 `Ariadne-Setup-0.2.0.exe`、`Ariadne-0.2.0-mac-arm64.dmg`、`Ariadne-0.2.0-linux-x86_64.AppImage`。CI 上安装 Python 依赖时用官方 PyPI（仓库默认的清华镜像只在本地生效）。
 
 ## 配置要点
 
@@ -201,7 +232,8 @@ backend/
   tests/
 package.json         一键命令（setup / dev / demo / start / test / eval / desktop）
 scripts/             启动脚本，只用 Node 内置模块，Windows / macOS / Linux 通用
-desktop/             桌面版：启动器（pywebview）、PyInstaller 配置、Windows 安装程序脚本
+desktop/             桌面版：Electron 外壳（electron/）、后端入口 server.py、PyInstaller 配置
+.github/workflows/   CI（测试、构建）、Release（三平台打包发布）、模型测评
 docs/                架构图（gen_architecture.py 生成）、界面截图、布局草图（layouts/）
 frontend/
   src/

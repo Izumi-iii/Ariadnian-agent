@@ -1,0 +1,81 @@
+# 每次 push / PR：后端测试（Linux + Windows）、测评冒烟、前端类型检查与构建
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # pyproject.toml 默认用清华镜像（国内快），GitHub 的机器在国外，这里改回官方 PyPI
+  UV_DEFAULT_INDEX: https://pypi.org/simple
+  PYTHONUTF8: "1"
+
+jobs:
+  backend:
+    name: 后端测试 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/pyproject.toml
+
+      - name: 安装 Python（版本见 .python-version）
+        run: uv python install
+
+      - name: 安装依赖
+        run: uv sync
+
+      - name: 单元测试（离线，不需要 API key）
+        run: uv run pytest -q
+
+      - name: 测评冒烟（离线基线 + 内置样例）
+        run: uv run python -m evals --offline --source fixture --no-save
+
+  frontend:
+    name: 前端类型检查与构建
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package*.json
+
+      - name: 安装依赖
+        run: if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
+
+      - name: 类型检查
+        run: npx tsc -b
+
+      - name: 构建
+        run: npx vite build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7

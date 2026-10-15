@@ -1,0 +1,7 @@
+# 每月检查一次 GitHub Actions 的版本更新
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
