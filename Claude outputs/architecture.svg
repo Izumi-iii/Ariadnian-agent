@@ -1,0 +1,265 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1440" viewBox="0 0 1200 1440" role="img" aria-label="Ariadne 研究报告助手 系统架构（动态）">
+<defs>
+<filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="2.6" result="b"/>
+<feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="shadow" x="-5%" y="-5%" width="110%" height="120%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#1f2328" flood-opacity=".06"/></filter>
+<filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="5"/></filter>
+<marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M1,1.5 L8.5,5 L1,8.5" fill="none" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+<marker id="arrowP" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M1,1.5 L8.5,5 L1,8.5" fill="none" stroke="#8f7ad6" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#fbfaf8"/></linearGradient>
+</defs>
+<rect x="6" y="6" width="1188" height="1428" rx="20" fill="url(#bg)" stroke="#e3e5e8" stroke-width="1.5"/>
+<path d="M6,50 H1194" stroke="#eceef1"/>
+<circle cx="32" cy="28" r="6.5" fill="#ff5f57"/>
+<circle cx="54" cy="28" r="6.5" fill="#febc2e"/>
+<circle cx="76" cy="28" r="6.5" fill="#28c840"/>
+<text x="600.0" y="33" font-size="12.5" fill="#8a9099" font-weight="400" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >~/Ariadnian-agent — architecture</text>
+<text x="600.0" y="112" text-anchor="middle" font-family="'Noto Serif CJK SC','Songti SC','STSong',Georgia,serif" font-weight="700"><tspan font-size="50" fill="#0078d4" font-style="italic">Ariadne</tspan><tspan font-size="44" fill="#1f2328" dx="14">的系统架构</tspan></text>
+<rect x="545" y="128" width="34" height="5" rx="1" fill="#1f2328"><animate attributeName="opacity" values="1;1;0;0" keyTimes="0;.5;.5;1" dur="1.1s" repeatCount="indefinite"/></rect>
+<text x="600.0" y="160" font-size="15" fill="#8a9099" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >你自己写 · AI 在旁边帮忙 · 每一处引用都能追溯到原文</text>
+<g transform="translate(0,46)">
+<rect x="440" y="135" width="320" height="66" rx="14" fill="#fdf0f2" stroke="#e07a8a" stroke-width="1.6" filter="url(#shadow)"/>
+<circle cx="482" cy="168" r="17" fill="#fff" stroke="#e07a8a" stroke-width="1.5"/><circle cx="482" cy="162" r="5.5" fill="#e07a8a"/><path d="M472,177 q10,-11 20,0" fill="#e07a8a"/>
+<text x="512" y="162" font-size="16" fill="#b3384d" font-weight="700" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >你（写作者）</text>
+<text x="512" y="184" font-size="12.5" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >在编辑器里写，随时调用 AI</text>
+<path d="M600,201 V246" fill="none" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<circle r="4.60" fill="#e07a8a" opacity="1" filter="url(#glow)"><animateMotion dur="1.2s" begin="0.00s" repeatCount="indefinite" path="M600,201 V246" calcMode="linear"/></circle>
+<circle r="3.31" fill="#e07a8a" opacity="0.5" filter="url(#glow)"><animateMotion dur="1.2s" begin="-0.07s" repeatCount="indefinite" path="M600,201 V246" calcMode="linear"/></circle>
+<circle r="2.30" fill="#e07a8a" opacity="0.25" filter="url(#glow)"><animateMotion dur="1.2s" begin="-0.14s" repeatCount="indefinite" path="M600,201 V246" calcMode="linear"/></circle>
+<rect x="40" y="250" width="1120" height="222" rx="18" fill="#fafcff" stroke="#4a90d9" stroke-width="1.6" stroke-dasharray="6 5" />
+<text x="64" y="279" font-size="15" fill="#1f5fa8" font-weight="700" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >前端 frontend</text>
+<text x="184" y="279" font-size="12" fill="#8a9099" font-weight="400" text-anchor="start" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >React 19 · Vite · MUI 7 · TipTap 3</text>
+<rect x="70" y="296" width="340" height="156" rx="14" fill="#eef5fd" stroke="#4a90d9" stroke-width="1.6" filter="url(#shadow)"/>
+<text x="88" y="326" font-size="16" fill="#1f5fa8" font-weight="700" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >编辑器</text>
+<text x="394" y="326" font-size="11.5" fill="#8a9099" font-weight="400" text-anchor="end" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >TipTap</text>
+<circle cx="92" cy="351" r="2.4" fill="#4a90d9"/>
+<text x="102" y="356" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >Citation 引用节点 · @ 插入引用</text>
+<circle cx="92" cy="374" r="2.4" fill="#4a90d9"/>
+<text x="102" y="379" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >GhostText 行内续写（Tab 接受）</text>
+<circle cx="92" cy="397" r="2.4" fill="#4a90d9"/>
+<text x="102" y="402" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >选区浮动菜单 · 修订模式 diff</text>
+<circle cx="92" cy="420" r="2.4" fill="#4a90d9"/>
+<text x="102" y="425" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >悬浮目录 / 短横线大纲</text>
+<rect x="288" y="371" width="1.8" height="15" fill="#4a90d9"><animate attributeName="opacity" values="1;1;0;0" keyTimes="0;.5;.5;1" dur="1s" repeatCount="indefinite"/></rect>
+<rect x="430" y="296" width="340" height="156" rx="14" fill="#eef5fd" stroke="#4a90d9" stroke-width="1.6" filter="url(#shadow)"/>
+<text x="448" y="326" font-size="16" fill="#1f5fa8" font-weight="700" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >页边批注</text>
+<text x="754" y="326" font-size="11.5" fill="#8a9099" font-weight="400" text-anchor="end" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >ReviewMarks</text>
+<circle cx="452" cy="351" r="2.4" fill="#4a90d9"/>
+<text x="462" y="356" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >停笔后逐段检查（段落 hash 缓存）</text>
+<circle cx="452" cy="374" r="2.4" fill="#4a90d9"/>
+<text x="462" y="379" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >缺引用的论断 → 候选文献</text>
+<circle cx="452" cy="397" r="2.4" fill="#4a90d9"/>
+<text x="462" y="402" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >撑不起论断的引用 → 换一篇</text>
+<circle cx="452" cy="420" r="2.4" fill="#4a90d9"/>
+<text x="462" y="425" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >卡片与句子对齐，一键接受</text>
+<path d="M452,436 q4,-4 8,0 t8,0 t8,0 t8,0 t8,0 t8,0 t8,0 t8,0 t8,0 t8,0 t8,0 t8,0" fill="none" stroke="#e3944d" stroke-width="1.4" stroke-dasharray="100" stroke-dashoffset="100"><animate attributeName="stroke-dashoffset" values="100;0;0;100" keyTimes="0;.3;.85;1" dur="5s" repeatCount="indefinite"/></path>
+<rect x="790" y="296" width="340" height="156" rx="14" fill="#eef5fd" stroke="#4a90d9" stroke-width="1.6" filter="url(#shadow)"/>
+<text x="808" y="326" font-size="16" fill="#1f5fa8" font-weight="700" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >助手抽屉</text>
+<text x="1114" y="326" font-size="11.5" fill="#8a9099" font-weight="400" text-anchor="end" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >Ctrl+J</text>
+<circle cx="812" cy="351" r="2.4" fill="#4a90d9"/>
+<text x="822" y="356" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >综述 Agent · 找引用</text>
+<circle cx="812" cy="374" r="2.4" fill="#4a90d9"/>
+<text x="822" y="379" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >文献问答 · 文献库 · 我的论文</text>
+<circle cx="812" cy="397" r="2.4" fill="#4a90d9"/>
+<text x="822" y="402" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >设置：模型 / 检索 / 用量统计</text>
+<circle cx="812" cy="420" r="2.4" fill="#4a90d9"/>
+<text x="822" y="425" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >参考文献 GB/T 7714 · APA 自动生成</text>
+<text x="780" y="498" font-size="12" fill="#8a9099" font-weight="400" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >HTTP · SSE 流式返回</text>
+<path d="M232,452 V540" fill="none" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M252,540 V452" fill="none" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M600,452 V488 H420 V540" fill="none" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M960,452 V540" fill="none" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<circle r="4.60" fill="#4a90d9" opacity="1" filter="url(#glow)"><animateMotion dur="1.4s" begin="0.00s" repeatCount="indefinite" path="M232,452 V540" calcMode="linear"/></circle>
+<circle r="3.31" fill="#4a90d9" opacity="0.5" filter="url(#glow)"><animateMotion dur="1.4s" begin="-0.07s" repeatCount="indefinite" path="M232,452 V540" calcMode="linear"/></circle>
+<circle r="2.30" fill="#4a90d9" opacity="0.25" filter="url(#glow)"><animateMotion dur="1.4s" begin="-0.14s" repeatCount="indefinite" path="M232,452 V540" calcMode="linear"/></circle>
+<circle r="4.60" fill="#e3944d" opacity="1" filter="url(#glow)"><animateMotion dur="1.4s" begin="-0.70s" repeatCount="indefinite" path="M252,540 V452" calcMode="linear"/></circle>
+<circle r="3.31" fill="#e3944d" opacity="0.5" filter="url(#glow)"><animateMotion dur="1.4s" begin="-0.77s" repeatCount="indefinite" path="M252,540 V452" calcMode="linear"/></circle>
+<circle r="2.30" fill="#e3944d" opacity="0.25" filter="url(#glow)"><animateMotion dur="1.4s" begin="-0.84s" repeatCount="indefinite" path="M252,540 V452" calcMode="linear"/></circle>
+<circle r="4.60" fill="#4a90d9" opacity="1" filter="url(#glow)"><animateMotion dur="1.8s" begin="-0.40s" repeatCount="indefinite" path="M600,452 V488 H420 V540" calcMode="linear"/></circle>
+<circle r="3.31" fill="#4a90d9" opacity="0.5" filter="url(#glow)"><animateMotion dur="1.8s" begin="-0.47s" repeatCount="indefinite" path="M600,452 V488 H420 V540" calcMode="linear"/></circle>
+<circle r="2.30" fill="#4a90d9" opacity="0.25" filter="url(#glow)"><animateMotion dur="1.8s" begin="-0.54s" repeatCount="indefinite" path="M600,452 V488 H420 V540" calcMode="linear"/></circle>
+<circle r="4.60" fill="#8f7ad6" opacity="1" filter="url(#glow)"><animateMotion dur="1.6s" begin="-0.20s" repeatCount="indefinite" path="M960,452 V540" calcMode="linear"/></circle>
+<circle r="3.31" fill="#8f7ad6" opacity="0.5" filter="url(#glow)"><animateMotion dur="1.6s" begin="-0.27s" repeatCount="indefinite" path="M960,452 V540" calcMode="linear"/></circle>
+<circle r="2.30" fill="#8f7ad6" opacity="0.25" filter="url(#glow)"><animateMotion dur="1.6s" begin="-0.34s" repeatCount="indefinite" path="M960,452 V540" calcMode="linear"/></circle>
+<rect x="40" y="516" width="1120" height="762" rx="18" fill="#fdfdfd" stroke="#b4bac3" stroke-width="1.6" stroke-dasharray="6 5" />
+<text x="64" y="545" font-size="15" fill="#454b54" font-weight="700" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >后端 backend</text>
+<text x="176" y="545" font-size="12" fill="#8a9099" font-weight="400" text-anchor="start" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >FastAPI · uvicorn</text>
+<rect x="70" y="560" width="430" height="300" rx="14" fill="#fdf3e7" stroke="#e3944d" stroke-width="1.6" filter="url(#shadow)"/>
+<text x="90" y="592" font-size="16" fill="#b35c17" font-weight="700" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >快速路径</text>
+<text x="166" y="592" font-size="12.5" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >直接调用模型 · 几百毫秒响应</text>
+<rect x="90" y="610" width="390" height="34" rx="17.0" fill="#fff" stroke="#e3944d" stroke-opacity=".55"/>
+<text x="104" y="631.5" font-size="12.5" fill="#b35c17" font-weight="600" text-anchor="start" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >/complete</text>
+<text x="466" y="631.5" font-size="12.5" fill="#4a4f57" font-weight="400" text-anchor="end" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >行内续写</text>
+<rect x="90" y="610" width="390" height="34" rx="17" fill="none" stroke="#e3944d" stroke-width="2.2" opacity="0"><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;.04;.16;.2;1" dur="6s" begin="0.0s" repeatCount="indefinite"/></rect>
+<rect x="90" y="656" width="390" height="34" rx="17.0" fill="#fff" stroke="#e3944d" stroke-opacity=".55"/>
+<text x="104" y="677.5" font-size="12.5" fill="#b35c17" font-weight="600" text-anchor="start" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >/edit  SSE</text>
+<text x="466" y="677.5" font-size="12.5" fill="#4a4f57" font-weight="400" text-anchor="end" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >选中改写</text>
+<rect x="90" y="656" width="390" height="34" rx="17" fill="none" stroke="#e3944d" stroke-width="2.2" opacity="0"><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;.04;.16;.2;1" dur="6s" begin="1.2s" repeatCount="indefinite"/></rect>
+<rect x="90" y="702" width="390" height="34" rx="17.0" fill="#fff" stroke="#e3944d" stroke-opacity=".55"/>
+<text x="104" y="723.5" font-size="12.5" fill="#b35c17" font-weight="600" text-anchor="start" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >/cite · /verify</text>
+<text x="466" y="723.5" font-size="12.5" fill="#4a4f57" font-weight="400" text-anchor="end" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >找引用 · 判断是否支撑</text>
+<rect x="90" y="702" width="390" height="34" rx="17" fill="none" stroke="#e3944d" stroke-width="2.2" opacity="0"><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;.04;.16;.2;1" dur="6s" begin="2.4s" repeatCount="indefinite"/></rect>
+<rect x="90" y="748" width="390" height="34" rx="17.0" fill="#fff" stroke="#e3944d" stroke-opacity=".55"/>
+<text x="104" y="769.5" font-size="12.5" fill="#b35c17" font-weight="600" text-anchor="start" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >/annotate</text>
+<text x="466" y="769.5" font-size="12.5" fill="#4a4f57" font-weight="400" text-anchor="end" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >页边批注</text>
+<rect x="90" y="748" width="390" height="34" rx="17" fill="none" stroke="#e3944d" stroke-width="2.2" opacity="0"><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;.04;.16;.2;1" dur="6s" begin="3.5999999999999996s" repeatCount="indefinite"/></rect>
+<rect x="90" y="794" width="390" height="34" rx="17.0" fill="#fff" stroke="#e3944d" stroke-opacity=".55"/>
+<text x="104" y="815.5" font-size="12.5" fill="#b35c17" font-weight="600" text-anchor="start" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >/ask  SSE</text>
+<text x="466" y="815.5" font-size="12.5" fill="#4a4f57" font-weight="400" text-anchor="end" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >文献问答（带 [n] 来源）</text>
+<rect x="90" y="794" width="390" height="34" rx="17" fill="none" stroke="#e3944d" stroke-width="2.2" opacity="0"><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;.04;.16;.2;1" dur="6s" begin="4.8s" repeatCount="indefinite"/></rect>
+<rect x="530" y="560" width="600" height="300" rx="14" fill="#f3effc" stroke="#8f7ad6" stroke-width="1.6" filter="url(#shadow)"/>
+<text x="550" y="592" font-size="16" fill="#5b45b0" font-weight="700" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >Agent 路径</text>
+<text x="642" y="592" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >LangGraph · interrupt() 人工确认 · SQLite checkpointer</text>
+<path d="M676.0,653.0 L697.0,653.0" stroke="#b9acea" stroke-width="1.6" marker-end="url(#arrowP)"/>
+<path d="M821.0,653.0 L842.0,653.0" stroke="#b9acea" stroke-width="1.6" marker-end="url(#arrowP)"/>
+<path d="M966.0,653.0 L987.0,653.0" stroke="#b9acea" stroke-width="1.6" marker-end="url(#arrowP)"/>
+<path d="M1049.0,676.0 L1049.0,728.0" stroke="#b9acea" stroke-width="1.6" marker-end="url(#arrowP)"/>
+<path d="M987.0,751.0 L966.0,751.0" stroke="#b9acea" stroke-width="1.6" marker-end="url(#arrowP)"/>
+<path d="M842.0,751.0 L821.0,751.0" stroke="#b9acea" stroke-width="1.6" marker-end="url(#arrowP)"/>
+<path d="M697.0,751.0 L676.0,751.0" stroke="#b9acea" stroke-width="1.6" marker-end="url(#arrowP)"/>
+<circle r="6" fill="#8f7ad6" filter="url(#glow)"><animateMotion dur="11.06s" repeatCount="indefinite" path="M614.0,653.0 L759.0,653.0 L904.0,653.0 L1049.0,653.0 L1049.0,751.0 L904.0,751.0 L759.0,751.0 L614.0,751.0" keyTimes="0.0000;0.0316;0.0887;0.1203;0.1773;0.3491;0.4061;0.4378;0.4763;0.5080;0.5650;0.5966;0.6536;0.8254;0.8824;0.9638;1.0000" keyPoints="0.0000;0.0000;0.1498;0.1498;0.2996;0.2996;0.4494;0.4494;0.5506;0.5506;0.7004;0.7004;0.8502;0.8502;1.0000;1.0000;1.0000" calcMode="linear"/></circle>
+<rect x="552" y="630" width="124" height="46" rx="10" fill="#fff" stroke="#8f7ad6" stroke-opacity=".7" stroke-width="1.3"/>
+<rect x="552" y="630" width="124" height="46" rx="10" fill="#f3effc" stroke="#8f7ad6" stroke-width="2.4" opacity="0"><animate attributeName="opacity" values="1;1;0;0" keyTimes="0.0000;0.0316;0.0616;1.0000" dur="11.06s" repeatCount="indefinite"/></rect>
+<text x="614.0" y="649" font-size="11.5" fill="#5b45b0" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >plan_queries</text>
+<text x="614.0" y="666" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >拆解检索式</text>
+<rect x="697" y="630" width="124" height="46" rx="10" fill="#fff" stroke="#8f7ad6" stroke-opacity=".7" stroke-width="1.3"/>
+<rect x="697" y="630" width="124" height="46" rx="10" fill="#f3effc" stroke="#8f7ad6" stroke-width="2.4" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0.0000;0.0767;0.0887;0.1203;0.1503;1.0000" dur="11.06s" repeatCount="indefinite"/></rect>
+<text x="759.0" y="649" font-size="11.5" fill="#5b45b0" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >search_papers</text>
+<text x="759.0" y="666" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >检索文献</text>
+<rect x="842" y="630" width="124" height="46" rx="10" fill="#fff" stroke="#e3944d" stroke-opacity=".7" stroke-width="1.3"/>
+<rect x="842" y="630" width="124" height="46" rx="10" fill="#fdf3e7" stroke="#e3944d" stroke-width="2.4" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0.0000;0.1653;0.1773;0.3491;0.3791;1.0000" dur="11.06s" repeatCount="indefinite"/></rect>
+<text x="904.0" y="649" font-size="11.5" fill="#b35c17" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >select_papers</text>
+<text x="904.0" y="666" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >勾选文献</text>
+<circle cx="962" cy="632" r="10" fill="none" stroke="#e3944d" stroke-width="2"><animate attributeName="r" values="9;17" dur="1.6s" repeatCount="indefinite"/><animate attributeName="opacity" values=".8;0" dur="1.6s" repeatCount="indefinite"/></circle>
+<circle cx="962" cy="632" r="9.5" fill="#e3944d"/><rect x="958.4" y="628" width="2.4" height="8" fill="#fff"/><rect x="963.2" y="628" width="2.4" height="8" fill="#fff"/>
+<rect x="987" y="630" width="124" height="46" rx="10" fill="#fff" stroke="#8f7ad6" stroke-opacity=".7" stroke-width="1.3"/>
+<rect x="987" y="630" width="124" height="46" rx="10" fill="#f3effc" stroke="#8f7ad6" stroke-width="2.4" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0.0000;0.3941;0.4061;0.4378;0.4678;1.0000" dur="11.06s" repeatCount="indefinite"/></rect>
+<text x="1049.0" y="649" font-size="11.5" fill="#5b45b0" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >ingest</text>
+<text x="1049.0" y="666" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >下载 · 切块</text>
+<rect x="987" y="728" width="124" height="46" rx="10" fill="#fff" stroke="#8f7ad6" stroke-opacity=".7" stroke-width="1.3"/>
+<rect x="987" y="728" width="124" height="46" rx="10" fill="#f3effc" stroke="#8f7ad6" stroke-width="2.4" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0.0000;0.4643;0.4763;0.5080;0.5380;1.0000" dur="11.06s" repeatCount="indefinite"/></rect>
+<text x="1049.0" y="747" font-size="11.5" fill="#5b45b0" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >synthesize</text>
+<text x="1049.0" y="764" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >综合要点</text>
+<rect x="842" y="728" width="124" height="46" rx="10" fill="#fff" stroke="#8f7ad6" stroke-opacity=".7" stroke-width="1.3"/>
+<rect x="842" y="728" width="124" height="46" rx="10" fill="#f3effc" stroke="#8f7ad6" stroke-width="2.4" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0.0000;0.5530;0.5650;0.5966;0.6266;1.0000" dur="11.06s" repeatCount="indefinite"/></rect>
+<text x="904.0" y="747" font-size="11.5" fill="#5b45b0" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >make_outline</text>
+<text x="904.0" y="764" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >生成大纲</text>
+<rect x="697" y="728" width="124" height="46" rx="10" fill="#fff" stroke="#e3944d" stroke-opacity=".7" stroke-width="1.3"/>
+<rect x="697" y="728" width="124" height="46" rx="10" fill="#fdf3e7" stroke="#e3944d" stroke-width="2.4" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0.0000;0.6416;0.6536;0.8254;0.8554;1.0000" dur="11.06s" repeatCount="indefinite"/></rect>
+<text x="759.0" y="747" font-size="11.5" fill="#b35c17" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >review_outline</text>
+<text x="759.0" y="764" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >确认大纲</text>
+<circle cx="817" cy="730" r="10" fill="none" stroke="#e3944d" stroke-width="2"><animate attributeName="r" values="9;17" dur="1.6s" repeatCount="indefinite"/><animate attributeName="opacity" values=".8;0" dur="1.6s" repeatCount="indefinite"/></circle>
+<circle cx="817" cy="730" r="9.5" fill="#e3944d"/><rect x="813.4" y="726" width="2.4" height="8" fill="#fff"/><rect x="818.2" y="726" width="2.4" height="8" fill="#fff"/>
+<rect x="552" y="728" width="124" height="46" rx="10" fill="#fff" stroke="#8f7ad6" stroke-opacity=".7" stroke-width="1.3"/>
+<rect x="552" y="728" width="124" height="46" rx="10" fill="#f3effc" stroke="#8f7ad6" stroke-width="2.4" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0.0000;0.8704;0.8824;0.9638;0.9938;1.0000" dur="11.06s" repeatCount="indefinite"/></rect>
+<text x="614.0" y="747" font-size="11.5" fill="#5b45b0" font-weight="600" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >finish</text>
+<text x="614.0" y="764" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >写入文档</text>
+<path d="M759.0,774 C759.0,808 904.0,808 904.0,778" fill="none" stroke="#e3944d" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"><animate attributeName="stroke-dashoffset" values="18;0" dur=".9s" repeatCount="indefinite"/></path>
+<text x="831.5" y="818" font-size="11.5" fill="#b35c17" font-weight="500" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >不满意 → 重写大纲</text>
+<circle cx="562" cy="837" r="7" fill="#e3944d"/><rect x="559.3" y="834" width="1.9" height="6" fill="#fff"/><rect x="562.9" y="834" width="1.9" height="6" fill="#fff"/>
+<text x="576" y="841.5" font-size="11.5" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >暂停等你确认 · 刷新页面、重启服务都能接着跑</text>
+<path d="M285,860 V892" fill="none" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M830,860 V892" fill="none" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<circle r="4.60" fill="#e3944d" opacity="1" filter="url(#glow)"><animateMotion dur="0.9s" begin="0.00s" repeatCount="indefinite" path="M285,860 V892" calcMode="linear"/></circle>
+<circle r="3.31" fill="#e3944d" opacity="0.5" filter="url(#glow)"><animateMotion dur="0.9s" begin="-0.07s" repeatCount="indefinite" path="M285,860 V892" calcMode="linear"/></circle>
+<circle r="2.30" fill="#e3944d" opacity="0.25" filter="url(#glow)"><animateMotion dur="0.9s" begin="-0.14s" repeatCount="indefinite" path="M285,860 V892" calcMode="linear"/></circle>
+<circle r="4.60" fill="#8f7ad6" opacity="1" filter="url(#glow)"><animateMotion dur="0.9s" begin="-0.45s" repeatCount="indefinite" path="M830,860 V892" calcMode="linear"/></circle>
+<circle r="3.31" fill="#8f7ad6" opacity="0.5" filter="url(#glow)"><animateMotion dur="0.9s" begin="-0.52s" repeatCount="indefinite" path="M830,860 V892" calcMode="linear"/></circle>
+<circle r="2.30" fill="#8f7ad6" opacity="0.25" filter="url(#glow)"><animateMotion dur="0.9s" begin="-0.59s" repeatCount="indefinite" path="M830,860 V892" calcMode="linear"/></circle>
+<rect x="70" y="896" width="1060" height="150" rx="14" fill="#ebf7ef" stroke="#5bb07a" stroke-width="1.6" filter="url(#shadow)"/>
+<text x="90" y="926" font-size="16" fill="#2b7a48" font-weight="700" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >LLM 接入层</text>
+<text x="184" y="926" font-size="12.5" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >llm.py · LiteLLM 统一接口</text>
+<rect x="90" y="944" width="160" height="50" rx="10" fill="#fff" stroke="#5bb07a" stroke-opacity=".6"/>
+<rect x="90" y="944" width="160" height="50" rx="10" fill="#ebf7ef" stroke="#5bb07a" stroke-width="2.2" opacity="0"><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;.05;.2;.26;1" dur="4.8s" begin="0.0s" repeatCount="indefinite"/></rect>
+<text x="170" y="965" font-size="13" fill="#2b7a48" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >complete</text>
+<text x="170" y="984" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >续写 · 8s 超时</text>
+<rect x="262" y="944" width="160" height="50" rx="10" fill="#fff" stroke="#5bb07a" stroke-opacity=".6"/>
+<rect x="262" y="944" width="160" height="50" rx="10" fill="#ebf7ef" stroke="#5bb07a" stroke-width="2.2" opacity="0"><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;.05;.2;.26;1" dur="4.8s" begin="1.2s" repeatCount="indefinite"/></rect>
+<text x="342" y="965" font-size="13" fill="#2b7a48" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >write</text>
+<text x="342" y="984" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >改写 · 问答</text>
+<rect x="434" y="944" width="160" height="50" rx="10" fill="#fff" stroke="#5bb07a" stroke-opacity=".6"/>
+<rect x="434" y="944" width="160" height="50" rx="10" fill="#ebf7ef" stroke="#5bb07a" stroke-width="2.2" opacity="0"><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;.05;.2;.26;1" dur="4.8s" begin="2.4s" repeatCount="indefinite"/></rect>
+<text x="514" y="965" font-size="13" fill="#2b7a48" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >judge</text>
+<text x="514" y="984" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >引用判断 · 批注</text>
+<rect x="606" y="944" width="160" height="50" rx="10" fill="#fff" stroke="#5bb07a" stroke-opacity=".6"/>
+<rect x="606" y="944" width="160" height="50" rx="10" fill="#ebf7ef" stroke="#5bb07a" stroke-width="2.2" opacity="0"><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;.05;.2;.26;1" dur="4.8s" begin="3.5999999999999996s" repeatCount="indefinite"/></rect>
+<text x="686" y="965" font-size="13" fill="#2b7a48" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >agent</text>
+<text x="686" y="984" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >综述规划</text>
+<text x="90" y="1026" font-size="12" fill="#8a9099" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >按档设置超时 / 重试 / 备用模型 · JSON 模式不支持时自动降级 · 每次调用记入 llm_calls</text>
+<text x="800" y="926" font-size="12" fill="#8a9099" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >可换任意服务商（网页里设置）</text>
+<rect x="800" y="940" width="65" height="24" rx="12" fill="#fff" stroke="#c9d2cc"/>
+<text x="832.6" y="956.5" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >DeepSeek</text>
+<rect x="873.2" y="940" width="65" height="24" rx="12" fill="#fff" stroke="#c9d2cc"/>
+<text x="905.8000000000001" y="956.5" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >通义千问</text>
+<rect x="946.4000000000001" y="940" width="40" height="24" rx="12" fill="#fff" stroke="#c9d2cc"/>
+<text x="966.2" y="956.5" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >Kimi</text>
+<rect x="994.0000000000001" y="940" width="65" height="24" rx="12" fill="#fff" stroke="#c9d2cc"/>
+<text x="1026.6000000000001" y="956.5" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >智谱 GLM</text>
+<rect x="800" y="972" width="65" height="24" rx="12" fill="#fff" stroke="#c9d2cc"/>
+<text x="832.6" y="988.5" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >硅基流动</text>
+<rect x="873.2" y="972" width="52" height="24" rx="12" fill="#fff" stroke="#c9d2cc"/>
+<text x="899.4000000000001" y="988.5" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >OpenAI</text>
+<rect x="933.6" y="972" width="52" height="24" rx="12" fill="#fff" stroke="#c9d2cc"/>
+<text x="959.8000000000001" y="988.5" font-size="12" fill="#4a4f57" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >Ollama</text>
+<text x="70" y="1078" font-size="14" fill="#454b54" font-weight="700" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >共享层</text>
+<text x="124" y="1078" font-size="12.5" fill="#8a9099" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >两条路径共用同一个文献库</text>
+<rect x="70" y="1092" width="330" height="166" rx="14" fill="#eef5fd" stroke="#4a90d9" stroke-width="1.6" filter="url(#shadow)"/>
+<text x="88" y="1122" font-size="16" fill="#1f5fa8" font-weight="700" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >混合检索</text>
+<text x="384" y="1122" font-size="11.5" fill="#8a9099" font-weight="400" text-anchor="end" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >retrieval</text>
+<circle cx="92" cy="1147" r="2.4" fill="#4a90d9"/>
+<text x="102" y="1152" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >BM25（jieba 分词）</text>
+<circle cx="92" cy="1170" r="2.4" fill="#4a90d9"/>
+<text x="102" y="1175" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >+ 可选向量检索 → RRF 融合</text>
+<circle cx="92" cy="1193" r="2.4" fill="#4a90d9"/>
+<text x="102" y="1198" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >中文论断 → 英文关键词扩展</text>
+<circle cx="92" cy="1216" r="2.4" fill="#4a90d9"/>
+<text x="102" y="1221" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >返回原文片段（章节 · 页码）</text>
+<rect x="435" y="1092" width="330" height="166" rx="14" fill="#f6f7f9" stroke="#b4bac3" stroke-width="1.6" filter="url(#shadow)"/>
+<text x="453" y="1122" font-size="16" fill="#454b54" font-weight="700" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >SQLite</text>
+<text x="749" y="1122" font-size="11.5" fill="#8a9099" font-weight="400" text-anchor="end" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >data/</text>
+<circle cx="457" cy="1147" r="2.4" fill="#b4bac3"/>
+<text x="467" y="1152" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >papers · chunks（按章节切块）</text>
+<circle cx="457" cy="1170" r="2.4" fill="#b4bac3"/>
+<text x="467" y="1175" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >documents · agent_threads</text>
+<circle cx="457" cy="1193" r="2.4" fill="#b4bac3"/>
+<text x="467" y="1198" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >checkpoints（断点续跑）</text>
+<circle cx="457" cy="1216" r="2.4" fill="#b4bac3"/>
+<text x="467" y="1221" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >llm_calls · search_cache</text>
+<rect x="800" y="1092" width="330" height="166" rx="14" fill="#fdf3e7" stroke="#e3944d" stroke-width="1.6" filter="url(#shadow)"/>
+<text x="818" y="1122" font-size="16" fill="#b35c17" font-weight="700" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >文献检索</text>
+<text x="1114" y="1122" font-size="11.5" fill="#8a9099" font-weight="400" text-anchor="end" font-family="'JetBrains Mono','Cascadia Code',Consolas,'SFMono-Regular',Menlo,monospace" >scholar.py</text>
+<circle cx="822" cy="1147" r="2.4" fill="#e3944d"/>
+<text x="832" y="1152" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >Semantic Scholar · arXiv · OpenAlex</text>
+<circle cx="822" cy="1170" r="2.4" fill="#e3944d"/>
+<text x="832" y="1175" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >按来源限速 · 结果缓存</text>
+<circle cx="822" cy="1193" r="2.4" fill="#e3944d"/>
+<text x="832" y="1198" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >429 退避重试 → 换 OpenAlex</text>
+<circle cx="822" cy="1216" r="2.4" fill="#e3944d"/>
+<text x="832" y="1221" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >下载 PDF → PyMuPDF 解析</text>
+<path d="M400,1175 H435" fill="none" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M800,1175 H765" fill="none" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="417.5" y="1166" font-size="11" fill="#8a9099" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >读</text>
+<text x="782.5" y="1166" font-size="11" fill="#8a9099" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >入库</text>
+<circle r="4.60" fill="#4a90d9" opacity="1" filter="url(#glow)"><animateMotion dur="1.0s" begin="0.00s" repeatCount="indefinite" path="M435,1175 H400" calcMode="linear"/></circle>
+<circle r="3.31" fill="#4a90d9" opacity="0.5" filter="url(#glow)"><animateMotion dur="1.0s" begin="-0.07s" repeatCount="indefinite" path="M435,1175 H400" calcMode="linear"/></circle>
+<circle r="2.30" fill="#4a90d9" opacity="0.25" filter="url(#glow)"><animateMotion dur="1.0s" begin="-0.14s" repeatCount="indefinite" path="M435,1175 H400" calcMode="linear"/></circle>
+<circle r="4.60" fill="#e3944d" opacity="1" filter="url(#glow)"><animateMotion dur="1.0s" begin="-0.50s" repeatCount="indefinite" path="M800,1175 H765" calcMode="linear"/></circle>
+<circle r="3.31" fill="#e3944d" opacity="0.5" filter="url(#glow)"><animateMotion dur="1.0s" begin="-0.57s" repeatCount="indefinite" path="M800,1175 H765" calcMode="linear"/></circle>
+<circle r="2.30" fill="#e3944d" opacity="0.25" filter="url(#glow)"><animateMotion dur="1.0s" begin="-0.64s" repeatCount="indefinite" path="M800,1175 H765" calcMode="linear"/></circle>
+<path d="M70,700 H54 V1175 H70" fill="none" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M1130,700 H1146 V1175 H1130" fill="none" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<circle r="4.60" fill="#e3944d" opacity="1" filter="url(#glow)"><animateMotion dur="3.2s" begin="0.00s" repeatCount="indefinite" path="M70,700 H54 V1175 H70" calcMode="linear"/></circle>
+<circle r="3.31" fill="#e3944d" opacity="0.5" filter="url(#glow)"><animateMotion dur="3.2s" begin="-0.07s" repeatCount="indefinite" path="M70,700 H54 V1175 H70" calcMode="linear"/></circle>
+<circle r="2.30" fill="#e3944d" opacity="0.25" filter="url(#glow)"><animateMotion dur="3.2s" begin="-0.14s" repeatCount="indefinite" path="M70,700 H54 V1175 H70" calcMode="linear"/></circle>
+<circle r="4.60" fill="#8f7ad6" opacity="1" filter="url(#glow)"><animateMotion dur="3.2s" begin="-1.60s" repeatCount="indefinite" path="M1130,700 H1146 V1175 H1130" calcMode="linear"/></circle>
+<circle r="3.31" fill="#8f7ad6" opacity="0.5" filter="url(#glow)"><animateMotion dur="3.2s" begin="-1.67s" repeatCount="indefinite" path="M1130,700 H1146 V1175 H1130" calcMode="linear"/></circle>
+<circle r="2.30" fill="#8f7ad6" opacity="0.25" filter="url(#glow)"><animateMotion dur="3.2s" begin="-1.74s" repeatCount="indefinite" path="M1130,700 H1146 V1175 H1130" calcMode="linear"/></circle>
+</g>
+<rect x="40" y="1340" width="1120" height="58" rx="14" fill="#fffaf0" stroke="#f0dcb4"/>
+<circle cx="76" cy="1369" r="13" fill="#ffd970"><animate attributeName="opacity" values=".55;1;.55" dur="2.4s" repeatCount="indefinite"/></circle><circle cx="76" cy="1369" r="20" fill="#ffd970" opacity=".25" filter="url(#soft)"/><rect x="71" y="1380" width="10" height="6" rx="1.5" fill="#c9a24a"/>
+<text x="104" y="1365" font-size="14" fill="#1f2328" font-weight="500" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >快速路径管写作时的即时反馈；Agent 路径管需要你确认的长任务。</text>
+<text x="104" y="1386" font-size="13" fill="#4a4f57" font-weight="400" text-anchor="start" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >两条路径共用同一个文献库，模型可在网页里随时切换，所有引用都对照原文核查。</text>
+<text x="600.0" y="1424" font-size="11.5" fill="#8a9099" font-weight="400" text-anchor="middle" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif" >Ariadne · 研究报告助手 —— 纯 SVG 动画，无脚本</text>
+</svg>

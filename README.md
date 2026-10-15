@@ -56,6 +56,11 @@
 
 ## 架构
 
+<p align="center"><img src="docs/architecture.svg" width="100%" alt="Ariadne 系统架构（动态）"/></p>
+
+<details>
+<summary>文字版（模块与接口）</summary>
+
 ```
 frontend/  React 19 + Vite + MUI 7 + TipTap 3
   ├─ 编辑器：Citation 节点 / @ 引用建议 / GhostText 续写 / 选区浮动菜单 + diff / 悬浮目录
@@ -71,6 +76,8 @@ backend/   FastAPI
   │                                                                              ▲──────── regenerate ────────┘
   └─ 共享：SQLite（文献、切块、文档）· BM25(jieba) + 可选向量的 RRF 混合检索 · 跨语言查询扩展
 ```
+
+</details>
 
 为什么把两条路径分开：续写、改写这些操作要求几百毫秒内响应，直接调用模型；综述这类长任务要中途暂停、等用户确认、断点续跑，这部分交给 LangGraph。
 
