@@ -1,4 +1,4 @@
-"""Ariadne 论文写作助手 · 后端入口
+"""Ariadne 研究报告助手 · 后端入口
 
     cd backend
     uv sync
@@ -17,12 +17,12 @@ from .config import get_settings
 from .db import init_db
 from .embeddings import embeddings_enabled
 from .llm import stats, tier_info
-from .routers import agent, assist, documents, papers
+from .routers import agent, assist, documents, papers, settings as settings_router
 
 settings = get_settings()
 init_db()
 
-app = FastAPI(title="Ariadne Paper Assistant", version="0.1.0")
+app = FastAPI(title="Ariadne Research Report Assistant", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -34,10 +34,12 @@ app.include_router(papers.router)
 app.include_router(documents.router)
 app.include_router(assist.router)
 app.include_router(agent.router)
+app.include_router(settings_router.router)
 
 
 @app.get("/api/health")
 def health():
+    settings = get_settings()  # 网页里改了设置会立即反映
     tiers = tier_info()
     return {
         "ok": True,

@@ -1,7 +1,7 @@
 [project]
 name = "ariadne-backend"
 version = "0.1.0"
-description = "Ariadne 论文写作助手后端：FastAPI + LangGraph"
+description = "Ariadne 研究报告助手后端：FastAPI + LangGraph"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
@@ -34,3 +34,4 @@ default = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = ["ignore::SyntaxWarning", "ignore::DeprecationWarning"]

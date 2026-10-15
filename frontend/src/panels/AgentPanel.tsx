@@ -468,8 +468,9 @@ export function AgentPanel() {
                 {!!result.errors?.length && (
                   <Box sx={{ mt: 0.75 }}>
                     {result.errors.map((e, i) => (
-                      <Typography key={i} sx={{ fontSize: 11.5, color: brand.amber }}>
-                        ⚠ {e}
+                      <Typography key={i} sx={{ fontSize: 11.5, color: e.startsWith('提示') ? brand.muted : brand.amber }}>
+                        {e.startsWith('提示') ? '💡 ' : '⚠ '}
+                        {e}
                       </Typography>
                     ))}
                   </Box>

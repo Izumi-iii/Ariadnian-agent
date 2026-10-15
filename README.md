@@ -1,8 +1,8 @@
-# Ariadne · 论文写作助手
+# Ariadne · 研究报告助手
 
-<p align="center"><img src="./frontend/public/ariadne-icon.svg" width="96" alt="Ariadne"/></p>
+<p align="center"><img src="./frontend/public/ariadne-512.png" width="128" alt="Ariadne"/></p>
 
-一个**你自己写、AI 在旁边帮忙**的论文编辑器（界面沿用 Alidade 的设计语言）：文献检索与管理、带出处的引用插入、Copilot 式续写、选中改写，以及一个会在关键步骤停下来等你确认的「文献综述 → 大纲」Agent。
+一个写研究报告和论文用的编辑器：**你自己写，AI 在旁边帮忙**（界面沿用 Alidade 的设计语言）：文献检索与管理、带出处的引用插入、Copilot 式续写、选中改写，以及一个会在关键步骤停下来等你确认的「文献综述 → 大纲」Agent。
 
 > 名字来自阿里阿德涅之线 —— 在文献的迷宫里牵一根线，每一处引用都能追溯到原文。
 
@@ -13,27 +13,46 @@
 | **行内续写建议** | 停顿约 0.7 秒出现灰色建议；`Tab` 接受，`Ctrl+→` 接受一个词，`Esc` 忽略 | 防抖 + AbortController 取消过期请求；走快模型，不经过 Agent |
 | **选中改写** | 选中文字 → 润色 / 学术化 / 改写 / 扩写 / 精简 / 译英 / 译中 / 自定义 | 流式输出，修订模式 diff，逐次接受或放弃；改写时保留引用标记 |
 | **插入引用** | 正文输入 `@` 搜索文献库；或文献库条目上的 ❞ 按钮 | 引用是独立的 citation 节点，绑定文献库 id |
-| **为一句话找引用** | 选中文字点「找引用」，或工具栏 🔍 | 混合检索 + LLM 判断「支持 / 部分支持 / 不相关」，并给出原文片段 |
-| **整篇引用核查** | 右侧「引用」→ 开始核查 | 逐条检查被引文献原文能否支撑那句话，能找出凭空挂上的引用 |
+| **为一句话找引用** | 选中文字，在浮动菜单里点「找引用」 | 混合检索 + LLM 判断「支持 / 部分支持 / 不相关」，并给出原文片段 |
+| **页边批注** | 默认开启（顶栏 ✎ 图标切换）；写完一段、光标离开后自动检查 | 逐段调用 `/api/assist/annotate`：核查已有引用、找出缺引用的论断并给出候选文献、至多一条精简建议；结果按段落内容缓存，正文用波浪线/虚线标出，卡片与句子对齐 |
+| **整篇引用核查** | 助手抽屉「找引用」→ 核查全文引用 | 逐条检查被引文献原文能否支撑那句话，能找出凭空挂上的引用 |
 | **参考文献自动生成** | 无需操作 | 顺序编码（GB/T 7714 简化）/ 作者-年份（APA）一键切换 |
-| **文献库** | 在线检索 arXiv + Semantic Scholar、上传 PDF、下载开放获取全文 | PyMuPDF 解析，按章节切块（记录章节和页码），遇到参考文献就停止 |
-| **文献问答** | 右侧「文献问答」 | 回答带 [n] 来源，可一键插入正文并自动转换成引用 |
-| **综述 Agent** | 右侧「综述 Agent」填主题 → 勾选文献 → 修改/确认大纲 → 写入文档 | LangGraph + `interrupt()` 人工确认 + SQLite checkpointer（刷新页面、重启服务都能恢复） |
+| **文献库** | 在线检索 Semantic Scholar / arXiv / OpenAlex、上传 PDF、下载开放获取全文 | PyMuPDF 解析，按章节切块（记录章节和页码），遇到参考文献就停止 |
+| **文献问答** | 助手抽屉「文献问答」 | 回答带 [n] 来源，可一键插入正文并自动转换成引用 |
+| **综述 Agent** | 助手抽屉「综述 Agent」填主题 → 勾选文献 → 修改/确认大纲 → 写入文档 | LangGraph + `interrupt()` 人工确认 + SQLite checkpointer（刷新页面、重启服务都能恢复） |
 | **导出** | 顶栏「导出」 | LaTeX + refs.bib（可直接传 Overleaf）、Markdown（pandoc 引用语法）、BibTeX |
 
 **防止编造引用**是贯穿各个功能的原则：大纲里的 bibkey 会和文献库核对，库里没有的直接丢弃；改写结果里的 `[@key]` 只有在文献库中存在才会变回引用；引用核查会对照被引文献的原文逐条检查。
+
+## 界面
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Ariadne            论文标题 ▾                     模型 [1]|作者-年 ✦ ✎ ⤓ ⚙ │
+├──┬───────────────────────────────────────────────────────────┬──────────┤
+│＋│  目录      正文（标题、章节、引用、参考文献）       页边批注   │ 助手抽屉  │
+│✦ │  引言      ………………………………………………  ┌──────────┐ │ （Ctrl+J）│
+│▤ │ ▍相关工作   ………………………~~~~~~~~~~~~ ──│这句缺少引用│ │ 综述 Agent│
+│▢ │  方法      ……………………[2]  ……………………  └──────────┘ │ 找引用    │
+│  │                                                           │ 文献问答  │
+│  │  2,318 字 · 9 处引用 · 页边建议 3 条   检查全文          ✓ │ 文献库    │
+└──┴───────────────────────────────────────────────────────────┴──────────┘
+```
+
+正文始终在视野中心；目录悬浮在左侧页边，打开抽屉或窗口变窄时缩成一列短横线（1/2/3 级标题长短不同，当前章节蓝色高亮，鼠标移上去立即预览标题和正文开头，点击跳转）；AI 助手平时收起，左侧图标栏或 `Ctrl+J` 打开。
 
 ## 架构
 
 ```
 frontend/  React 19 + Vite + MUI 7 + TipTap 3
-  ├─ 编辑器：Citation 节点 / @ 引用建议 / GhostText 续写 / 选区浮动菜单 + diff
-  └─ 侧栏：我的论文 · 文献库 · 综述 Agent · 引用 · 文献问答
+  ├─ 编辑器：Citation 节点 / @ 引用建议 / GhostText 续写 / 选区浮动菜单 + diff / 悬浮目录
+  ├─ 页边批注：段落 hash 缓存 → /api/assist/annotate → 正文装饰（ReviewMarks）+ 对齐的卡片
+  └─ 助手抽屉：综述 Agent · 找引用 · 文献问答 · 文献库 · 我的论文
         │   /api（开发时由 Vite 代理）
         ▼
 backend/   FastAPI
   ├─ LLM 接入层 llm.py：LiteLLM，四档模型 complete / write / judge / agent，各自的超时、重试、备用模型，调用日志
-  ├─ 快速路径（直接调用 LLM，低延迟）：/api/assist/complete · edit(SSE) · cite · verify · ask(SSE)
+  ├─ 快速路径（直接调用 LLM，低延迟）：/api/assist/complete · edit(SSE) · cite · verify · annotate · ask(SSE)
   ├─ Agent 路径：/api/agent/start · /{id}/resume（SSE） → LangGraph
   │     plan_queries → search_papers → select_papers⏸ → ingest → synthesize → make_outline → review_outline⏸ → finish
   │                                                                              ▲──────── regenerate ────────┘
@@ -44,32 +63,32 @@ backend/   FastAPI
 
 ## 快速开始
 
-需要 Python ≥ 3.11、[uv](https://github.com/astral-sh/uv)、Node.js ≥ 20。
+需要 [uv](https://docs.astral.sh/uv/getting-started/installation/)（Windows 可用 `winget install astral-sh.uv`）和 Node.js ≥ 20。所有命令都在仓库根目录执行：
 
 ```bash
-# 1. 后端
-cd backend
-copy .env.example .env        # macOS/Linux: cp .env.example .env，然后填 OPENAI_API_KEY 等
-uv sync
-uv run uvicorn app.main:app --reload --port 8000
-
-# 2. 前端（另开一个终端）
-cd frontend
-npm install
-npm run dev                   # 打开 http://localhost:5173
+npm run setup     # 第一次：安装前后端依赖，并生成 backend/.env
+npm run dev       # 开发：后端 :8000 + 前端 :5173 一起启动，热更新，自动打开浏览器，Ctrl+C 一起退出
 ```
 
-没有 API key 也可以先看效果：在 `.env` 里设 `LLM_FAKE=1`，所有模型调用和学术检索都会返回演示数据。
+| 命令 | 作用 |
+|---|---|
+| `npm run setup` | `uv sync` + `npm install`，没有 `backend/.env` 时从 `.env.example` 生成 |
+| `npm run dev` | 开发模式，前后端同时启动 |
+| `npm run demo` | 同上，但设置 `LLM_FAKE=1`：不调用模型、不需要 API key，适合演示和调界面 |
+| `npm start` | 生产模式：前端有改动才重新构建，由后端单端口提供服务 http://localhost:8000 |
+| `npm test` | 后端测试（20 个，离线）+ 前端类型检查 |
 
-只想开一个服务：执行 `cd frontend && npm run build`，后端会自动托管 `frontend/dist`，直接访问 http://localhost:8000 即可。
-
-### 测试
-
-```bash
-cd backend && uv run pytest -q     # 12 个用例，离线运行（LLM_FAKE），覆盖切块、文献库、PDF、引用核查、Agent 暂停/恢复/重写
-```
+依赖没装时 `dev` / `demo` / `start` 会自动先执行一次 `setup`。设置环境变量 `NO_OPEN=1` 可以不自动打开浏览器，`PORT` 可以修改 `npm start` 的端口。
 
 ## 配置要点
+
+**推荐在网页里配置**：右上角 ⚙ 打开「设置」，可以配置模型（选服务商预设、填 API Key、主模型和快模型，高级里还能按四档分别配置）、文献检索（Semantic Scholar / OpenAlex 的 key、默认来源、缓存天数）、向量检索，并查看各档模型的用量统计。每一项都有「测试」按钮，保存后立即生效，不用重启。
+
+- 网页里保存的设置写在本机 `backend/data/settings.json`，**优先于 `.env`**；网页里没设置的项继续读 `.env`，所以原来的 `.env` 配置照样可用。
+- API Key 只写不读：接口只返回是否已设置和末 4 位，测试失败时报错信息里的 key 也会被遮住。
+- 第一次打开、还没配置模型时，会自动弹出设置页。
+
+也可以继续用 `.env`（适合部署或脚本化），字段说明见 `backend/.env.example`：
 
 - **模型（LiteLLM）**：模型名写成 `provider/model`，例如 `deepseek/deepseek-chat`、`openai/qwen-plus`（OpenAI 兼容服务，需同时填 `LLM_API_BASE`）、`ollama_chat/qwen2.5:7b`，Claude、Gemini 等原生接口也能用。按任务分四档：
 
@@ -82,7 +101,7 @@ cd backend && uv run pytest -q     # 12 个用例，离线运行（LLM_FAKE）�
 
   没单独配置的档位使用 `MODEL_ID` / `FAST_MODEL_ID`。每档还可以配置 `_API_KEY`、`_API_BASE`、`_TIMEOUT`、`_FALLBACKS`（备用模型）。旧版的 `MODEL_PROVIDER` + `OPENAI_API_KEY` + `OPENAI_BASE_URL` 配置仍然有效。每次调用的耗时、首 token 延迟、token 数和费用都会记录下来，在右上角「模型设置」里查看（接口为 `/api/llm/stats`）。
 - **中文写作 + 英文文献**：系统会把中文句子转换成英文关键词，再和原句一起检索。条件允许的话，建议再开启多语言向量模型（例如 `EMBEDDING_PROVIDER=ollama`、`EMBEDDING_MODEL=bge-m3`）。
-- **Semantic Scholar**：不配 key 也能用，但容易被限流。
+- **学术检索与限流**：Semantic Scholar 不配 key 时与所有匿名用户共享配额，高峰期经常返回 429，强烈建议免费申请 `SEMANTIC_SCHOLAR_API_KEY`。检索层会自动处理：同一来源的请求限速（S2 每秒 1 次、arXiv 3 秒 1 次），429/5xx 按 Retry-After 或指数退避重试 3 次，仍失败就冷却 60 秒并改用 OpenAlex 补位（可选 `OPENALEX_API_KEY`），结果缓存 7 天（`SEARCH_CACHE_DAYS`）。
 
 ## 目录
 
@@ -90,6 +109,7 @@ cd backend && uv run pytest -q     # 12 个用例，离线运行（LLM_FAKE）�
 backend/
   app/
     main.py            FastAPI 入口
+    routers/settings.py  网页设置：读取 / 保存（settings.json 覆盖 .env）、测试模型连接与检索来源
     config.py          .env 配置（兼容旧版字段）
     llm.py             LiteLLM 接入层：四档模型、JSON 模式、备用模型、调用统计、LLM_FAKE
     db.py              SQLite 表结构
@@ -97,17 +117,19 @@ backend/
     ingest.py          PDF 解析与按章节切块
     retrieval.py       BM25 + 向量 RRF 混合检索
     embeddings.py      可选嵌入（Ollama / OpenAI）
-    scholar.py         arXiv / Semantic Scholar 检索、PDF 下载
+    scholar.py         Semantic Scholar / arXiv / OpenAlex 检索：限速、429 重试、自动补位、结果缓存；PDF 下载
     assist.py          续写、改写、找引用、核查、问答
     agent/graph.py     LangGraph 综述→大纲工作流
     routers/           API 路由
   tests/
+package.json         一键命令（setup / dev / demo / start / test）
+scripts/             启动脚本，只用 Node 内置模块，Windows / macOS / Linux 通用
 frontend/
   src/
-    editor/            TipTap 编辑器与扩展（引用节点、@ 引用、灰色续写、选区改写）
-    panels/            AI 助手（综述 Agent / 找引用 / 文献问答）、文献库、大纲、文档
-    components/        时间线卡片、输入框、模型设置
-    lib/               API、引用格式化、导出
+    editor/            TipTap 编辑器与扩展（引用节点、@ 引用、灰色续写、选区改写、页边批注、悬浮目录）
+    panels/            右侧抽屉：综述 Agent / 找引用 / 文献问答 / 文献库 / 我的论文
+    components/        时间线卡片、输入框、设置页（模型 / 文献检索 / 向量检索 / 用量）
+    lib/               API、引用格式化、导出、页边批注的段落缓存与定位
 ```
 
 ## 路线图

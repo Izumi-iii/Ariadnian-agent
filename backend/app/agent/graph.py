@@ -85,6 +85,7 @@ def search_papers(state: ReviewState) -> dict:
         results, errs = scholar.search(q, state.get("sources"), limit=8)
         found.extend(results)
         errors.extend(errs)
+    errors = list(dict.fromkeys(errors))  # 多个检索式遇到同一个限流提示只保留一条
     papers = scholar.dedupe(found)
     # 有摘要的优先；同等条件下引用数高的优先
     papers.sort(key=lambda p: (not p.abstract, -(p.citation_count or 0)))

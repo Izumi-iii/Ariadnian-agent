@@ -10,7 +10,7 @@ export function DocsPanel() {
   const { docId, setDocId, bumpDocs } = useApp()
   const docs = useDocList()
   return (
-    <Box sx={{ height: '100%', overflow: 'auto', px: 2, pt: 1.75, pb: 2 }}>
+    <Box sx={{ height: '100%', overflow: 'auto', px: 2, pt: 0.5, pb: 2 }}>
       <SectionLabel>我的论文 · {docs.length} 篇</SectionLabel>
       <Thread>
         {docs.map((d) => (

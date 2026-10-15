@@ -293,3 +293,44 @@ def stats(days: int = 30) -> dict[str, Any]:
             "cost_usd": round(sum(r["cost_usd"] or 0 for r in ok), 4),
         }
     return {"days": days, "tiers": out}
+
+
+# ---------------------------------------------------------------------------
+# 设置页「测试连接」
+# ---------------------------------------------------------------------------
+def test_connection(model: str, api_base: str | None, api_key: str | None, timeout: float = 30) -> dict[str, Any]:
+    """用给定的（可能还没保存的）配置发一个极小的请求，返回耗时或错误信息。"""
+    resolved = resolve_model(model)
+    t = ModelTier(name="test", model=model, api_key=api_key, api_base=api_base, timeout=timeout, retries=0)
+    kw = _kwargs(t, resolved)
+    start = time.perf_counter()
+    try:
+        resp = litellm.completion(**kw, messages=[{"role": "user", "content": "Reply with the single word: OK"}],
+                                  max_tokens=5, temperature=0)
+        return {"ok": True, "model": resolved, "latency_ms": int((time.perf_counter() - start) * 1000),
+                "reply": (resp.choices[0].message.content or "").strip()[:40]}
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        if api_key:
+            msg = msg.replace(api_key, "****")  # 报错信息里不回显 key
+        return {"ok": False, "model": resolved, "latency_ms": int((time.perf_counter() - start) * 1000),
+                "hint": _explain(e, msg), "error": f"{type(e).__name__}: {msg}"[:400]}
+
+
+def _explain(e: Exception, msg: str) -> str:
+    """把常见错误翻译成用户能直接处理的提示"""
+    name = type(e).__name__
+    low = msg.lower()
+    if name == "AuthenticationError" or "authentication" in low or "401" in msg or "invalid api key" in low or "incorrect api key" in low:
+        return "API Key 无效或没有权限，检查 key 是否填对、是否属于这个服务商"
+    if name == "NotFoundError" or "model_not_found" in low or "does not exist" in low or "404" in msg:
+        return "找不到这个模型，检查模型名（以服务商控制台为准）或接口地址"
+    if name == "RateLimitError" or "429" in msg or "quota" in low or "insufficient" in low:
+        return "被限流或余额不足，稍后再试或检查账户余额"
+    if name in {"Timeout", "APITimeoutError"} or "timed out" in low or "timeout" in low:
+        return "请求超时，检查网络或换一个更快的模型"
+    if "connection" in low or name == "APIConnectionError":
+        return "连不上接口地址，检查地址是否正确、网络或代理是否可用"
+    if "llm provider not provided" in low or "provider" in low and "not" in low:
+        return "模型名缺少服务商前缀，写成 openai/模型名 或 deepseek/模型名"
+    return "调用失败，详细信息见下方"

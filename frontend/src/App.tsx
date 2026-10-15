@@ -1,14 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Allotment } from 'allotment'
 import 'allotment/dist/style.css'
 import {
-  Box, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Tooltip, Typography,
+  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem,
+  Tooltip, Typography,
 } from '@mui/material'
+import RateReviewOutlinedIcon from '@mui/icons-material/RateReviewOutlined'
+import RateReviewIcon from '@mui/icons-material/RateReview'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import AddCircleIcon from '@mui/icons-material/AddCircle'
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined'
-import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined'
@@ -18,20 +21,17 @@ import FunctionsIcon from '@mui/icons-material/Functions'
 import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined'
 import CheckIcon from '@mui/icons-material/Check'
 import AddIcon from '@mui/icons-material/Add'
-import mark from './ariadne-mark.svg'
+import avatar from './assets/ariadne-avatar.png'
 import { PillToggle } from './components/Thread'
 import { SettingsDialog } from './components/SettingsDialog'
 import { PaperEditor } from './editor/PaperEditor'
 import { api } from './lib/api'
-import { useApp, type LeftView } from './lib/appContext'
+import { useApp, type RightTab } from './lib/appContext'
 import { citeStore, useCiteState } from './lib/citations'
 import { createDoc, relTime, useBootstrapDoc, useDocList } from './lib/docs'
 import { citedIds, download, toLatex, toMarkdown } from './lib/export'
 import type { CiteStyle } from './lib/types'
-import { AssistantPanel } from './panels/AssistantPanel'
-import { DocsPanel } from './panels/DocsPanel'
-import { LibraryPanel } from './panels/LibraryPanel'
-import { OutlinePanel } from './panels/OutlinePanel'
+import { DrawerPanel } from './panels/DrawerPanel'
 import { brand } from './theme'
 
 // ------------------------------------------------------------------ 顶栏
@@ -39,6 +39,16 @@ function DocSwitcher() {
   const { docId, setDocId, docTitle, bumpDocs } = useApp()
   const docs = useDocList()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const [confirm, setConfirm] = useState(false)
+  const remove = async () => {
+    setConfirm(false)
+    if (!docId) return
+    await api.deleteDoc(docId)
+    const list = await api.docs()
+    if (list.length) setDocId(list[0].id)
+    else setDocId((await createDoc()).id)
+    bumpDocs()
+  }
   return (
     <>
       <Box
@@ -82,7 +92,29 @@ function DocSwitcher() {
           </ListItemIcon>
           新建论文
         </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setAnchor(null)
+            setConfirm(true)
+          }}
+          sx={{ color: 'error.main' }}
+        >
+          <ListItemIcon>
+            <DeleteOutlineIcon fontSize="small" color="error" />
+          </ListItemIcon>
+          删除当前论文
+        </MenuItem>
       </Menu>
+      <Dialog open={confirm} onClose={() => setConfirm(false)}>
+        <DialogTitle>删除这篇论文？</DialogTitle>
+        <DialogContent>「{docTitle || '未命名论文'}」将被永久删除，文献库不受影响。</DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirm(false)}>取消</Button>
+          <Button color="error" variant="contained" onClick={remove}>
+            删除
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   )
 }
@@ -131,9 +163,8 @@ function ExportButton() {
 }
 
 function TopBar() {
-  const { docId, health, copilot, setCopilot } = useApp()
+  const { docId, health, copilot, setCopilot, review, setReview, openSettings } = useApp()
   const st = useCiteState()
-  const [settings, setSettings] = useState(false)
   const changeStyle = (s: CiteStyle) => {
     citeStore.setStyle(s)
     if (docId) api.saveDoc(docId, { cite_style: s })
@@ -141,18 +172,18 @@ function TopBar() {
   return (
     <Box sx={{ height: 52, display: 'flex', alignItems: 'center', px: 2, gap: 2, flexShrink: 0, bgcolor: '#fff' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: 300 }}>
-        <Box component="img" src={mark} sx={{ width: 22, height: 22 }} />
+        <Box component="img" src={avatar} alt="Ariadne" sx={{ width: 30, height: 30, borderRadius: '7px', display: 'block' }} />
         <Typography sx={{ fontSize: 18, fontWeight: 500, color: brand.ink, letterSpacing: 0.2 }}>Ariadne</Typography>
-        <Typography sx={{ fontSize: 12, color: brand.faint, ml: 0.5 }}>论文写作助手</Typography>
+        <Typography sx={{ fontSize: 12, color: brand.faint, ml: 0.5 }}>研究报告助手</Typography>
       </Box>
       <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0 }}>
         <DocSwitcher />
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
         {health && (
-          <Tooltip title={health.fake ? '离线演示模式（LLM_FAKE=1），不调用模型' : '查看四档模型与调用统计'}>
+          <Tooltip title={health.fake ? '离线演示模式：不调用模型。点击打开设置' : health.llm_ready ? '点击修改模型设置' : '还没有配置模型，点击设置'}>
             <Typography
-              onClick={() => setSettings(true)}
+              onClick={() => openSettings('model')}
               sx={{ fontSize: 13, color: health.llm_ready ? brand.muted : brand.red, cursor: 'pointer', maxWidth: 200 }}
               noWrap
             >
@@ -174,32 +205,37 @@ function TopBar() {
             {copilot ? <AutoAwesomeIcon fontSize="small" /> : <AutoAwesomeOutlinedIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
+        <Tooltip title={review ? '页边建议：开（空闲时检查引用和表达，结果显示在段落旁）' : '页边建议：关'}>
+          <IconButton aria-label="页边建议" onClick={() => setReview(!review)} sx={{ color: review ? brand.blue : brand.muted }}>
+            {review ? <RateReviewIcon fontSize="small" /> : <RateReviewOutlinedIcon fontSize="small" />}
+          </IconButton>
+        </Tooltip>
         <ExportButton />
-        <Tooltip title="模型设置">
-          <IconButton onClick={() => setSettings(true)} sx={{ color: brand.muted }}>
+        <Tooltip title="设置：模型、文献检索、向量检索">
+          <IconButton aria-label="设置" onClick={() => openSettings('model')} sx={{ color: brand.muted }}>
             <SettingsOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       </Box>
-      <SettingsDialog open={settings} onClose={() => setSettings(false)} />
     </Box>
   )
 }
 
-// ------------------------------------------------------------------ 左侧图标栏
-const RAIL: [LeftView, string, typeof StorageOutlinedIcon][] = [
-  ['assistant', 'AI 助手', AutoAwesomeOutlinedIcon],
+// ------------------------------------------------------------------ 左侧图标栏（控制右侧抽屉）
+const RAIL: [RightTab, string, typeof StorageOutlinedIcon][] = [
+  ['agent', 'AI 助手（Ctrl+J）', AutoAwesomeOutlinedIcon],
   ['library', '文献库', StorageOutlinedIcon],
-  ['outline', '大纲', FormatListBulletedIcon],
   ['docs', '我的论文', FolderOutlinedIcon],
 ]
 
 function Rail() {
-  const { leftView, setLeftView, setDocId, bumpDocs } = useApp()
+  const { drawerOpen, rightTab, toggleDrawer, setDocId, bumpDocs } = useApp()
+  const group = (t: RightTab) => (t === 'agent' || t === 'cite' || t === 'ask' ? 'agent' : t)
   return (
     <Box sx={{ width: 52, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.75, pt: 1.5, borderRight: `1px solid ${brand.lineSoft}` }}>
       <Tooltip title="新建论文" placement="right">
         <IconButton
+          aria-label="新建论文"
           onClick={async () => {
             const d = await createDoc()
             bumpDocs()
@@ -211,12 +247,12 @@ function Rail() {
         </IconButton>
       </Tooltip>
       {RAIL.map(([key, label, Icon]) => {
-        const active = leftView === key
+        const active = drawerOpen && group(rightTab) === key
         return (
           <Tooltip key={key} title={label} placement="right">
             <IconButton
-              aria-label={label}
-              onClick={() => setLeftView(active ? null : key)}
+              aria-label={label.replace(/（.*）/, '')}
+              onClick={() => toggleDrawer(key)}
               sx={{
                 borderRadius: '8px', color: active ? brand.blue : '#5f6368', bgcolor: active ? 'rgba(0,120,212,0.09)' : 'transparent',
                 '&:hover': { bgcolor: active ? 'rgba(0,120,212,0.13)' : 'rgba(0,0,0,0.05)' },
@@ -231,31 +267,37 @@ function Rail() {
   )
 }
 
-// ------------------------------------------------------------------ 主布局
+// ------------------------------------------------------------------ 主布局：图标栏 | 正文（目录 + 页边批注）| 助手抽屉
 export default function App() {
-  const { docId, leftView } = useApp()
+  const { docId, drawerOpen, setDrawerOpen } = useApp()
   useBootstrapDoc()
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
+        e.preventDefault()
+        setDrawerOpen(!drawerOpen)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [drawerOpen, setDrawerOpen])
 
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: '#fff' }}>
       <TopBar />
+      <SettingsDialog />
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <Rail />
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Allotment proportionalLayout={false} separator={false}>
-            <Allotment.Pane preferredSize={420} minSize={320} maxSize={640} visible={leftView !== null}>
-              <Box sx={{ height: '100%', position: 'relative' }}>
-                {(['assistant', 'library', 'outline', 'docs'] as LeftView[]).map((v) => (
-                  <Box key={v} sx={{ position: 'absolute', inset: 0, display: leftView === v ? 'block' : 'none' }}>
-                    {v === 'assistant' ? <AssistantPanel /> : v === 'library' ? <LibraryPanel /> : v === 'outline' ? <OutlinePanel /> : <DocsPanel />}
-                  </Box>
-                ))}
-              </Box>
-            </Allotment.Pane>
-            <Allotment.Pane minSize={520}>
-              <Box sx={{ height: '100%', p: 1.5, pl: leftView ? 0.5 : 1.5, pt: 0.5, boxSizing: 'border-box' }}>
+            <Allotment.Pane minSize={560}>
+              <Box sx={{ height: '100%', p: 1.5, pr: drawerOpen ? 0.75 : 1.5, pt: 0.5, boxSizing: 'border-box' }}>
                 {docId ? <PaperEditor key={docId} docId={docId} /> : <Box sx={{ p: 4, color: 'text.secondary' }}>正在加载…</Box>}
               </Box>
+            </Allotment.Pane>
+            <Allotment.Pane preferredSize={400} minSize={320} maxSize={640} visible={drawerOpen}>
+              <DrawerPanel />
             </Allotment.Pane>
           </Allotment>
         </Box>

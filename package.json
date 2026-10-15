@@ -1,0 +1,15 @@
+{
+  "name": "ariadne",
+  "private": true,
+  "description": "Ariadne 研究报告助手 —— 一条命令安装、启动",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "node scripts/dev.mjs",
+    "demo": "node scripts/dev.mjs --demo",
+    "start": "node scripts/start.mjs",
+    "test": "node scripts/test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

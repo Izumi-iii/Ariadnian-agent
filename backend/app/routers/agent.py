@@ -30,7 +30,7 @@ class StartIn(BaseModel):
     doc_id: str | None = None
     language: str = "zh"
     paper_type: str = "学术论文"
-    sources: list[str] = Field(default_factory=lambda: ["semantic_scholar", "arxiv"])
+    sources: list[str] | None = None  # 不传则使用设置里的默认来源
     max_papers: int = 8
     fetch_pdf: bool = True
 

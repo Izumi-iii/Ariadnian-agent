@@ -49,7 +49,7 @@ def retrieval_query(text: str) -> str:
 # 行内补全（Copilot 式灰色建议）
 # ---------------------------------------------------------------------------
 COMPLETE_SYSTEM = (
-    "你是学术论文写作助手，负责在用户光标处给出自然的续写建议，类似代码编辑器里的 Copilot。\n"
+    "你是研究报告和学术论文的写作助手，负责在用户光标处给出自然的续写建议，类似代码编辑器里的 Copilot。\n"
     "规则：\n"
     "1. 只输出要插入光标处的文字，不要重复光标前已有的内容，不要解释，不要加引号。\n"
     "2. 与上下文语言一致（中文就写中文，英文就写英文），保持学术语体。\n"
@@ -222,7 +222,7 @@ def verify_citation(sentence: str, paper_id: str) -> dict:
 # 基于文献库的问答
 # ---------------------------------------------------------------------------
 ASK_SYSTEM = (
-    "你是论文写作助手，根据用户文献库中检索到的片段回答问题。"
+    "你是研究报告写作助手，根据用户文献库中检索到的片段回答问题。"
     "每个关键论断后用 [n] 标注来源编号（对应给出的片段编号）；片段里没有的信息要明确说明“文献库中未找到”，不要编造。"
     "使用与问题相同的语言回答，简洁、有条理。"
 )
@@ -254,3 +254,128 @@ def ask_stream(question: str, k: int = 6) -> tuple[list[dict], Iterator[str]]:
         if sources else "文献库中未找到相关内容。（离线演示回答）"
     )
     return sources, llm.stream_chat(messages, tier="write", fake=fake)
+
+
+# ---------------------------------------------------------------------------
+# 页边批注：对一个段落做引用核查、缺引用检测和精简建议
+# ---------------------------------------------------------------------------
+CITE_TOKEN = re.compile(r"\[((?:@[\w:.-]+(?:\s*;\s*)?)+)\]")
+# 英文分号不作为句子边界：[@a; @b] 这样的引用标记里也有分号
+_SENT_SPLIT = re.compile(r"(?<=[。！？!?；])|(?<=[.])\s+")
+_WORDY = re.compile(r"非常|在很大程度上|一定程度上|总的来说|众所周知|\bvery\b|\ba lot of\b|\bin order to\b", re.I)
+
+
+def split_sentences(paragraph: str) -> list[str]:
+    parts = [p for p in _SENT_SPLIT.split(paragraph) if p and p.strip()]
+    out: list[str] = []
+    for p in parts:
+        # "……结论。[@key]" —— 句末标点之后的引用属于前一句
+        m = re.match(r"^\s*((?:\[(?:@[\w:.-]+(?:\s*;\s*)?)+\]\s*)+)(.*)$", p, re.S)
+        if m and out:
+            out[-1] += m.group(1).rstrip()
+            p = m.group(2)
+        if p.strip():
+            out.append(p)
+    return out
+
+
+def strip_cites(text: str) -> str:
+    return CITE_TOKEN.sub("", text)
+
+
+REVIEW_SYSTEM = (
+    "你是严谨的学术论文审稿人，帮助作者改进一个段落。只输出 JSON，不要解释。"
+)
+
+
+def _review(paragraph_marked: str, plain: str, title: str) -> dict:
+    """让模型找：缺引用的事实性论断（≤2）+ 值得精简的一句（≤1）。"""
+    user = (
+        f"论文题目：{title or '（未命名）'}\n"
+        f"段落（[引用] 表示该处已有引用）：\n{paragraph_marked}\n\n"
+        "请找出：\n"
+        "1. 需要文献支撑但没有引用的事实性论断，最多 2 句。必须原样摘录原文中的完整句子；"
+        "常识、作者对自己方法的描述、过渡句都不算。\n"
+        "2. 最多 1 句表达明显冗余或口语化、值得精简的句子，给出改写。只改表达、不改意思，"
+        "不要选含 [引用] 的句子。\n"
+        "没有就返回空数组 / null。输出格式：\n"
+        '{"missing": [{"sentence": "原句", "reason": "不超过20字"}], '
+        '"rewrite": {"sentence": "原句", "revised": "改写", "reason": "不超过20字"} 或 null}'
+    )
+
+    def fake(_: list) -> str:
+        import json as _json
+
+        sents = [s.strip() for s in split_sentences(plain)]
+        wordy = next((s for s in sents if _WORDY.search(s)), None)
+        missing = [s for s in sents if len(s) >= 15 and s != wordy and "[引用]" not in s][:1]
+        data: dict = {"missing": [{"sentence": s, "reason": "事实性论断缺少文献支撑（离线演示）"} for s in missing], "rewrite": None}
+        if wordy:
+            data["rewrite"] = {"sentence": wordy, "revised": _WORDY.sub("", wordy).replace("  ", " "), "reason": "删去冗余修饰（离线演示）"}
+        return _json.dumps(data, ensure_ascii=False)
+
+    return llm.chat_json(
+        [{"role": "system", "content": REVIEW_SYSTEM}, {"role": "user", "content": user}],
+        tier="judge", temperature=0, fake=fake,
+    )
+
+
+def annotate(paragraph: str, title: str = "", check_citations: bool = True, review: bool = True) -> list[dict]:
+    """paragraph 使用 [@bibkey] 表示引用。返回的 anchor 都是去掉引用标记后的原文片段，前端据此定位。"""
+    import hashlib
+
+    from .library import list_papers
+
+    by_key = {p.bibkey: p for p in list_papers()}
+    sents = split_sentences(paragraph)
+    anns: list[dict] = []
+
+    def aid(kind: str, anchor: str) -> str:
+        return hashlib.md5(f"{kind}:{anchor}".encode()).hexdigest()[:10]
+
+    # 1) 已有引用 → 核查原文是否支撑
+    if check_citations:
+        for s in sents:
+            keys = [k.strip().lstrip("@") for m in CITE_TOKEN.finditer(s) for k in m.group(1).split(";")]
+            if not keys:
+                continue
+            anchor = strip_cites(s).strip()
+            items = []
+            for k in dict.fromkeys(keys):
+                p = by_key.get(k)
+                if not p:
+                    items.append({"paper_id": None, "bibkey": k, "title": k, "verdict": "missing", "reason": "文献库中没有这篇文献"})
+                    continue
+                r = verify_citation(anchor, p.id)
+                items.append({"paper_id": p.id, "bibkey": k, "title": p.title, "verdict": r["verdict"],
+                              "reason": r.get("reason", ""), "snippet": r.get("snippet", ""), "page": r.get("page")})
+            anns.append({"id": aid("cite", anchor), "kind": "cite_check", "anchor": anchor, "items": items})
+
+    # 2) 缺引用 + 精简建议
+    plain = strip_cites(paragraph)
+    if review and len(plain.strip()) >= 30:
+        marked = CITE_TOKEN.sub("[引用]", paragraph)
+        try:
+            data = _review(marked, plain, title)
+        except Exception:  # noqa: BLE001  审稿失败不影响引用核查结果
+            data = {}
+        for m in (data.get("missing") or [])[:2]:
+            sent = strip_cites(str(m.get("sentence", ""))).replace("[引用]", "").strip()
+            if len(sent) < 6 or sent not in plain:
+                continue  # 模型没有原样摘录 → 无法定位，丢弃
+            cands = [c for c in suggest_citations(sent, k=3, judge=True) if c.get("verdict") in {"supports", "partial"}][:2]
+            anns.append({
+                "id": aid("missing", sent), "kind": "missing_citation", "anchor": sent,
+                "reason": str(m.get("reason", ""))[:60],
+                "candidates": [{"paper_id": c["paper"]["id"], "bibkey": c["paper"]["bibkey"], "title": c["paper"]["title"],
+                                "year": c["paper"].get("year"), "verdict": c["verdict"], "reason": c.get("reason", ""),
+                                "snippet": c["snippet"][:300], "page": c.get("page")} for c in cands],
+            })
+        rw = data.get("rewrite") or None
+        if isinstance(rw, dict):
+            orig = str(rw.get("sentence", "")).strip()
+            revised = str(rw.get("revised", "")).strip()
+            if orig and revised and orig != revised and orig in plain and "[引用]" not in orig:
+                anns.append({"id": aid("rewrite", orig), "kind": "rewrite", "anchor": orig, "revised": revised,
+                             "reason": str(rw.get("reason", ""))[:60]})
+    return anns

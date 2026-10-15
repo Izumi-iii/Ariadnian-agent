@@ -59,6 +59,11 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     error             TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_llm_calls_tier ON llm_calls(tier, ts);
+CREATE TABLE IF NOT EXISTS search_cache (
+    key         TEXT PRIMARY KEY,
+    results     TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS agent_threads (
     thread_id   TEXT PRIMARY KEY,
     doc_id      TEXT,

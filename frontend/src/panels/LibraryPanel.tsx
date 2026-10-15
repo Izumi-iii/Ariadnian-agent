@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Box, Button, Checkbox, Chip, CircularProgress, Collapse, Dialog, DialogActions, DialogContent, DialogTitle,
   Divider, FormControlLabel, IconButton, InputBase, Link, ListItemIcon, Menu, MenuItem, TextField, Tooltip, Typography,
@@ -29,7 +29,17 @@ function meta(p: PaperIn) {
 function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { papers, refreshPapers, notify } = useApp()
   const [q, setQ] = useState('')
-  const [sources, setSources] = useState({ semantic_scholar: true, arxiv: true })
+  const [sources, setSources] = useState({ semantic_scholar: true, arxiv: true, openalex: false })
+  useEffect(() => {
+    if (!open) return
+    api
+      .settings()
+      .then((v) => {
+        const on = (v.values.SEARCH_SOURCES?.value || 'semantic_scholar,arxiv').split(',')
+        setSources({ semantic_scholar: on.includes('semantic_scholar'), arxiv: on.includes('arxiv'), openalex: on.includes('openalex') })
+      })
+      .catch(() => undefined)
+  }, [open])
   const [results, setResults] = useState<PaperIn[]>([])
   const [errors, setErrors] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
@@ -81,17 +91,18 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
           </Button>
         </Box>
         <Box sx={{ display: 'flex', gap: 2 }}>
-          {(['semantic_scholar', 'arxiv'] as const).map((s) => (
+          {(['semantic_scholar', 'arxiv', 'openalex'] as const).map((s) => (
             <FormControlLabel
               key={s}
               control={<Checkbox size="small" checked={sources[s]} onChange={(e) => setSources({ ...sources, [s]: e.target.checked })} />}
-              label={<Typography variant="body2">{s === 'arxiv' ? 'arXiv' : 'Semantic Scholar'}</Typography>}
+              label={<Typography variant="body2">{s === 'arxiv' ? 'arXiv' : s === 'openalex' ? 'OpenAlex' : 'Semantic Scholar'}</Typography>}
             />
           ))}
         </Box>
         {errors.map((e) => (
-          <Typography key={e} variant="caption" color="warning.main" component="div">
-            ⚠ {e}
+          <Typography key={e} variant="caption" component="div" sx={{ color: e.startsWith('提示') ? 'text.secondary' : 'warning.main' }}>
+            {e.startsWith('提示') ? '💡 ' : '⚠ '}
+            {e}
           </Typography>
         ))}
         <Box sx={{ mt: 1 }}>
@@ -288,7 +299,7 @@ export function LibraryPanel() {
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ px: 2, pt: 1.75, pb: 1 }}>
+      <Box sx={{ px: 2, pt: 0.5, pb: 1 }}>
         <SectionLabel>文献库 · {papers.length} 篇</SectionLabel>
         <Box
           sx={{

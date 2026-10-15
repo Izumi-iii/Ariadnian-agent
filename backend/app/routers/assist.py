@@ -36,6 +36,13 @@ class VerifyIn(BaseModel):
     paper_ids: list[str]
 
 
+class AnnotateIn(BaseModel):
+    paragraph: str
+    title: str = ""
+    check_citations: bool = True
+    review: bool = True
+
+
 class AskIn(BaseModel):
     question: str
     k: int = 6
@@ -82,3 +89,13 @@ def ask(body: AskIn):
         yield {"type": "done"}
 
     return sse_response(events())
+
+
+@router.post("/annotate")
+def annotate(body: AnnotateIn):
+    """页边批注：对一个段落做引用核查、缺引用检测和精简建议。"""
+    try:
+        return {"annotations": assist.annotate(body.paragraph, body.title, body.check_citations, body.review)}
+    except LLMNotConfigured as e:
+        raise HTTPException(503, str(e)) from e
+
