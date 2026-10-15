@@ -222,6 +222,8 @@ def run_retrieval(bundle: Bundle, lib: Library, limit: int | None, fake: bool) -
     if not fake:  # 关键词扩展要调用模型
         expanded = _pmap(lambda c: (c, retrieval_query(bundle.zh_claims[c])), zh, 4, "zh_expand")
         res["zh_bm25_expand"] = evaluate(expanded, hybrid=False)
+        # 扩展失败（模型返回空）时查询不变，这个比例高说明关键词扩展没生效
+        res["zh_bm25_expand"]["expand_failed_rate"] = rate(sum(q == bundle.zh_claims[c] for c, q in expanded), len(expanded))
         if embeddings_enabled():
             res["en_hybrid"] = evaluate([(c, c) for c in claims], hybrid=True)
             res["zh_hybrid_expand"] = evaluate(expanded, hybrid=True)
@@ -298,11 +300,15 @@ def run_latency(bundle: Bundle, limit: int | None) -> dict[str, Any]:
 
 def llm_usage() -> dict[str, Any]:
     """汇总本次测评期间所有模型调用（测评用的是独立数据库，不会混入平时的使用记录）"""
+    from app import pricing
     from app.db import get_conn
 
     out: dict[str, Any] = {}
     with get_conn() as conn:
-        rows = [dict(r) for r in conn.execute("SELECT tier, model, ok, latency_ms, prompt_tokens, completion_tokens, cost_usd FROM llm_calls")]
+        rows = [dict(r) for r in conn.execute(
+            "SELECT ts, tier, model, ok, latency_ms, prompt_tokens, completion_tokens, cached_tokens, cost_usd FROM llm_calls")]
+    for r in rows:
+        r["cost_cny"] = pricing.call_cost(r, pricing.price_for(r["model"])) if r["ok"] else None
     for tier in sorted({r["tier"] for r in rows}):
         rs = [r for r in rows if r["tier"] == tier]
         lat = [r["latency_ms"] for r in rs if r["ok"] and r["latency_ms"] is not None]
@@ -315,6 +321,7 @@ def llm_usage() -> dict[str, Any]:
             "prompt_tokens": sum(r["prompt_tokens"] or 0 for r in rs),
             "completion_tokens": sum(r["completion_tokens"] or 0 for r in rs),
             "cost_usd": round(sum(cost), 4) if cost else None,
+            "cost_cny": round(sum(c for c in cny), 4) if (cny := [r["cost_cny"] for r in rs if r["cost_cny"] is not None]) else None,
         }
     return out
 

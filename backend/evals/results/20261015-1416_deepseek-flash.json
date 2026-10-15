@@ -1,0 +1,84 @@
+{
+  "created": "2026-10-15T14:16:15",
+  "mode": "model",
+  "models": {
+    "complete": "deepseek-flash",
+    "write": "deepseek-flash",
+    "judge": "deepseek-flash",
+    "agent": "deepseek-flash"
+  },
+  "embeddings": null,
+  "source": "scifact",
+  "limit": null,
+  "data": {
+    "pairs": 209,
+    "corpus": 1489,
+    "zh_claims": 60,
+    "citeworthy_paragraphs": 20
+  },
+  "tasks": {
+    "retrieval": {
+      "corpus_size": 1489,
+      "embeddings": false,
+      "en_bm25": {
+        "recall@1": 0.71,
+        "recall@5": 0.847,
+        "recall@10": 0.887,
+        "mrr@10": 0.779,
+        "n": 124
+      },
+      "zh_bm25": {
+        "recall@1": 0.267,
+        "recall@5": 0.267,
+        "recall@10": 0.283,
+        "mrr@10": 0.269,
+        "n": 60
+      },
+      "zh_bm25_expand": {
+        "recall@1": 0.433,
+        "recall@5": 0.533,
+        "recall@10": 0.567,
+        "mrr@10": 0.483,
+        "n": 60,
+        "expand_failed_rate": 0.55
+      },
+      "seconds": 158.0
+    },
+    "latency": {
+      "complete": {
+        "n": 20,
+        "p50_ms": 2210,
+        "p95_ms": 3132,
+        "empty_rate": 0.0
+      },
+      "seconds": 41.9
+    }
+  },
+  "llm_usage": {
+    "complete": {
+      "models": [
+        "openai/deepseek-flash"
+      ],
+      "calls": 31,
+      "error_rate": 0.0,
+      "p50_ms": 1356,
+      "p95_ms": 1760,
+      "prompt_tokens": 7547,
+      "completion_tokens": 3428,
+      "cost_usd": null
+    },
+    "judge": {
+      "models": [
+        "openai/deepseek-flash"
+      ],
+      "calls": 120,
+      "error_rate": 0.0,
+      "p50_ms": 1647,
+      "p95_ms": 6651,
+      "prompt_tokens": 9692,
+      "completion_tokens": 50908,
+      "cost_usd": null
+    }
+  },
+  "seconds": 199.9
+}

@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     first_token_ms    INTEGER,
     prompt_tokens     INTEGER,
     completion_tokens INTEGER,
+    cached_tokens     INTEGER,
     cost_usd          REAL,
     error             TEXT
 );
@@ -97,6 +98,10 @@ def init_db() -> None:
             return
         conn = _connect()
         conn.executescript(_SCHEMA)
+        # 旧数据库补列：命中缓存的输入 tokens（用于按缓存价计费）
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(llm_calls)")}
+        if "cached_tokens" not in cols:
+            conn.execute("ALTER TABLE llm_calls ADD COLUMN cached_tokens INTEGER")
         conn.commit()
         conn.close()
         _initialized = True

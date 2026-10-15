@@ -1,0 +1,181 @@
+{
+  "created": "2026-10-15T14:07:03",
+  "mode": "model",
+  "models": {
+    "complete": "deepseek-flash",
+    "write": "deepseek-flash",
+    "judge": "deepseek-flash",
+    "agent": "deepseek-flash"
+  },
+  "embeddings": null,
+  "source": "scifact",
+  "limit": null,
+  "data": {
+    "pairs": 209,
+    "corpus": 1489,
+    "zh_claims": 60,
+    "citeworthy_paragraphs": 20
+  },
+  "tasks": {
+    "judge": {
+      "n": 209,
+      "n_supported": 138,
+      "n_not_supported": 71,
+      "accuracy": 0.67,
+      "support_precision": 1.0,
+      "support_recall": 0.5,
+      "support_f1": 0.667,
+      "false_support_rate": 0.0,
+      "missed_support_rate": 0.065,
+      "unknown_rate": 0.0,
+      "confusion": {
+        "supported": {
+          "partial": 60,
+          "supports": 69,
+          "unrelated": 9
+        },
+        "not_supported": {
+          "unrelated": 64,
+          "partial": 7
+        }
+      },
+      "zh": {
+        "n": 136,
+        "n_supported": 68,
+        "n_not_supported": 68,
+        "accuracy": 0.757,
+        "support_precision": 1.0,
+        "support_recall": 0.515,
+        "support_f1": 0.68,
+        "false_support_rate": 0.0,
+        "missed_support_rate": 0.088,
+        "unknown_rate": 0.0,
+        "confusion": {
+          "supported": {
+            "unrelated": 6,
+            "supports": 35,
+            "partial": 27
+          },
+          "not_supported": {
+            "unrelated": 67,
+            "partial": 1
+          }
+        }
+      },
+      "seconds": 188.4
+    },
+    "fake_cite": {
+      "true": {
+        "n": 138,
+        "flagged_red": 0.087,
+        "flagged_any": 0.507,
+        "verdicts": {
+          "unrelated": 12,
+          "supports": 68,
+          "partial": 58
+        }
+      },
+      "random_fake": {
+        "n": 138,
+        "flagged_red": 1.0,
+        "flagged_any": 1.0,
+        "verdicts": {
+          "unrelated": 138
+        }
+      },
+      "hard_fake": {
+        "n": 138,
+        "flagged_red": 0.913,
+        "flagged_any": 0.949,
+        "verdicts": {
+          "unrelated": 126,
+          "supports": 7,
+          "partial": 5
+        }
+      },
+      "headline": {
+        "detect_random": 1.0,
+        "detect_hard": 0.913,
+        "detect_hard_any": 0.949,
+        "false_alarm_red": 0.087,
+        "false_alarm_any": 0.507
+      },
+      "seconds": 189.2
+    },
+    "retrieval": {
+      "corpus_size": 1489,
+      "embeddings": false,
+      "en_bm25": {
+        "recall@1": 0.71,
+        "recall@5": 0.847,
+        "recall@10": 0.887,
+        "mrr@10": 0.779,
+        "n": 124
+      },
+      "zh_bm25": {
+        "recall@1": 0.267,
+        "recall@5": 0.267,
+        "recall@10": 0.283,
+        "mrr@10": 0.269,
+        "n": 60
+      },
+      "zh_bm25_expand": {
+        "recall@1": 0.267,
+        "recall@5": 0.267,
+        "recall@10": 0.283,
+        "mrr@10": 0.269,
+        "n": 60
+      },
+      "seconds": 15.8
+    },
+    "missing": {
+      "paragraphs": 20,
+      "sentences": 72,
+      "gold_positive": 26,
+      "flagged": 27,
+      "precision": 0.815,
+      "recall": 0.846,
+      "f1": 0.83,
+      "tp": 22,
+      "fp": 5,
+      "fn": 4,
+      "seconds": 54.9
+    },
+    "latency": {
+      "complete": {
+        "n": 20,
+        "p50_ms": 1093,
+        "p95_ms": 1533,
+        "empty_rate": 0.25
+      },
+      "seconds": 22.7
+    }
+  },
+  "llm_usage": {
+    "complete": {
+      "models": [
+        "openai/deepseek-flash"
+      ],
+      "calls": 20,
+      "error_rate": 0.0,
+      "p50_ms": 1078,
+      "p95_ms": 1520,
+      "prompt_tokens": 4866,
+      "completion_tokens": 1679,
+      "cost_usd": null
+    },
+    "judge": {
+      "models": [
+        "openai/deepseek-flash"
+      ],
+      "calls": 715,
+      "error_rate": 0.0,
+      "p50_ms": 1325,
+      "p95_ms": 4604,
+      "prompt_tokens": 165193,
+      "completion_tokens": 183273,
+      "cost_usd": null
+    }
+  },
+  "seconds": 471.0
+}

@@ -215,6 +215,29 @@ def test_real_path_with_mocked_litellm(monkeypatch):
 
 
 # ---------------------------------------------------------------- 页边批注
+def test_reasoning_model_empty_output_is_retried(monkeypatch):
+    """推理模型把 max_tokens 全用在思考上、正文为空时，放宽上限重试一次。"""
+    import dataclasses
+    from types import SimpleNamespace
+
+    from app import config, llm
+
+    base = config.get_settings()
+    tiers = dict(base.tiers)
+    tiers["judge"] = dataclasses.replace(tiers["judge"], api_key="k", fallbacks=())
+    monkeypatch.setattr(llm, "get_settings", lambda: dataclasses.replace(base, llm_fake=False, tiers=tiers))
+    seen = []
+
+    def completion(**kw):
+        seen.append(kw["max_tokens"])
+        text, finish = ("", "length") if kw["max_tokens"] else ("retrieval augmented generation", "stop")
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text), finish_reason=finish)], usage=None)
+
+    monkeypatch.setattr(llm.litellm, "completion", completion)
+    assert llm.chat([{"role": "user", "content": "hi"}], tier="judge", max_tokens=80) == "retrieval augmented generation"
+    assert seen == [80, None]
+
+
 def test_split_sentences_keeps_trailing_cites():
     from app.assist import split_sentences
 
@@ -408,3 +431,35 @@ def test_settings_explicit_empty_overrides_env(monkeypatch, clean_settings):
     assert v["values"]["LLM_API_BASE"]["source"] == "ui" and v["values"]["LLM_API_BASE"]["value"] is None
     monkeypatch.delenv("LLM_API_BASE")
     config.get_settings.cache_clear()
+
+
+def test_pricing_and_usage_stats(clean_settings):
+    """价格表：DeepSeek 高峰翻倍、缓存命中按缓存价；自定义价格优先；统计接口给出按天和按模型的费用。"""
+    from app import pricing
+    from app.db import get_conn
+
+    p = pricing.price_for("openai/deepseek-flash")
+    row = {"prompt_tokens": 1_000_000, "cached_tokens": 500_000, "completion_tokens": 100_000}
+    assert abs(pricing.call_cost({**row, "ts": "2026-10-17 02:30:00"}, p) - 0.91) < 1e-9  # 周六，空闲
+    assert abs(pricing.call_cost({**row, "ts": "2026-10-15 02:30:00"}, p) - 1.82) < 1e-9  # 周四 10:30，高峰
+    assert pricing.price_for("openai/some-unknown-model") is None
+    assert pricing.price_for("ollama_chat/qwen2.5:7b").input == 0
+
+    bad = client.put("/api/settings", json={"values": {"MODEL_PRICES": "not json"}})
+    assert bad.status_code == 400
+    ok = client.put("/api/settings", json={"values": {"MODEL_PRICES": '{"openai/my-model": {"input": 2, "output": 8}}'}})
+    assert ok.status_code == 200
+    assert pricing.price_for("my-model").output == 8
+
+    with get_conn() as conn:
+        conn.execute("DELETE FROM llm_calls")
+        conn.execute("INSERT INTO llm_calls (tier, model, ok, latency_ms, prompt_tokens, completion_tokens, cached_tokens) "
+                     "VALUES ('judge', 'openai/my-model', 1, 800, 1000000, 500000, 0)")
+        conn.execute("INSERT INTO llm_calls (tier, model, ok, latency_ms, prompt_tokens, completion_tokens) "
+                     "VALUES ('complete', 'openai/unknown', 1, 300, 100, 10)")
+    st = client.get("/api/llm/stats?days=7").json()
+    assert st["currency"] == "CNY" and len(st["daily"]) == 7
+    assert st["tiers"]["judge"]["cost_cny"] == 6.0  # 1M × 2 + 0.5M × 8
+    assert st["tiers"]["complete"]["cost_cny"] is None and st["tiers"]["complete"]["unpriced_calls"] == 1
+    assert st["daily"][-1]["tiers"]["judge"]["cost_cny"] == 6.0
+    assert {m["model"] for m in st["models"]} == {"openai/my-model", "openai/unknown"}

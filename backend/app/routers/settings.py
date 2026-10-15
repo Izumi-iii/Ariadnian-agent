@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 
+import json
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -73,6 +75,18 @@ def write_settings(body: SettingsIn):
                 if not srcs or any(x not in _SOURCES for x in srcs):
                     raise HTTPException(400, "检索来源只能是 semantic_scholar / arxiv / openalex")
                 v = ",".join(srcs)
+            if k == "MODEL_PRICES":
+                try:
+                    data = json.loads(v)
+                    assert isinstance(data, dict)
+                    for m, pr in data.items():
+                        for f in ("input", "output"):
+                            assert float(pr[f]) >= 0
+                        if "cached" in pr:
+                            assert float(pr["cached"]) >= 0
+                except Exception:
+                    raise HTTPException(400, '自定义价格格式不对：应为 {"模型名": {"input": 2, "cached": 0.2, "output": 8}}，单位 元/百万 tokens') from None
+                v = json.dumps(data, ensure_ascii=False)
             if k == "LLM_FAKE":
                 v = "1" if v.lower() in {"1", "true", "yes", "on"} else "0"
         changes[k] = v

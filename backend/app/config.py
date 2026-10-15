@@ -49,6 +49,7 @@ OVERRIDABLE_KEYS = {
     *(f"MODEL_{t.upper()}{suffix}" for t in TIERS for suffix in ("", "_API_KEY", "_API_BASE", "_TIMEOUT", "_FALLBACKS")),
     "EMBEDDING_PROVIDER", "EMBEDDING_MODEL", "EMBEDDING_BASE_URL", "EMBEDDING_API_KEY",
     "SEMANTIC_SCHOLAR_API_KEY", "OPENALEX_API_KEY", "SEARCH_CACHE_DAYS", "SEARCH_SOURCES",
+    "MODEL_PRICES",  # 自定义模型价格（JSON，元 / 百万 tokens）
 }
 
 # 网页里把某项「明确设为空」（例如 DeepSeek 不需要自定义地址），避免回退到 .env 里的旧值

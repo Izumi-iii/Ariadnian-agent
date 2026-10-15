@@ -1,0 +1,183 @@
+{
+  "created": "2026-10-15T14:26:48",
+  "mode": "model",
+  "models": {
+    "complete": "deepseek/deepseek-chat",
+    "write": "deepseek/deepseek-chat",
+    "judge": "deepseek/deepseek-chat",
+    "agent": "deepseek/deepseek-chat"
+  },
+  "embeddings": null,
+  "source": "scifact",
+  "limit": null,
+  "data": {
+    "pairs": 209,
+    "corpus": 1489,
+    "zh_claims": 60,
+    "citeworthy_paragraphs": 20
+  },
+  "tasks": {
+    "judge": {
+      "n": 209,
+      "n_supported": 138,
+      "n_not_supported": 71,
+      "accuracy": 0.751,
+      "support_precision": 0.957,
+      "support_recall": 0.652,
+      "support_f1": 0.776,
+      "false_support_rate": 0.056,
+      "missed_support_rate": 0.072,
+      "unknown_rate": 0.0,
+      "confusion": {
+        "supported": {
+          "partial": 38,
+          "supports": 90,
+          "unrelated": 10
+        },
+        "not_supported": {
+          "unrelated": 53,
+          "partial": 14,
+          "supports": 4
+        }
+      },
+      "zh": {
+        "n": 136,
+        "n_supported": 68,
+        "n_not_supported": 68,
+        "accuracy": 0.838,
+        "support_precision": 1.0,
+        "support_recall": 0.676,
+        "support_f1": 0.807,
+        "false_support_rate": 0.0,
+        "missed_support_rate": 0.118,
+        "unknown_rate": 0.0,
+        "confusion": {
+          "supported": {
+            "unrelated": 8,
+            "supports": 46,
+            "partial": 14
+          },
+          "not_supported": {
+            "unrelated": 67,
+            "partial": 1
+          }
+        }
+      },
+      "seconds": 80.0
+    },
+    "fake_cite": {
+      "true": {
+        "n": 138,
+        "flagged_red": 0.109,
+        "flagged_any": 0.406,
+        "verdicts": {
+          "unrelated": 15,
+          "supports": 82,
+          "partial": 41
+        }
+      },
+      "random_fake": {
+        "n": 138,
+        "flagged_red": 1.0,
+        "flagged_any": 1.0,
+        "verdicts": {
+          "unrelated": 138
+        }
+      },
+      "hard_fake": {
+        "n": 138,
+        "flagged_red": 0.913,
+        "flagged_any": 0.949,
+        "verdicts": {
+          "unrelated": 126,
+          "supports": 7,
+          "partial": 5
+        }
+      },
+      "headline": {
+        "detect_random": 1.0,
+        "detect_hard": 0.913,
+        "detect_hard_any": 0.949,
+        "false_alarm_red": 0.109,
+        "false_alarm_any": 0.406
+      },
+      "seconds": 117.5
+    },
+    "retrieval": {
+      "corpus_size": 1489,
+      "embeddings": false,
+      "en_bm25": {
+        "recall@1": 0.71,
+        "recall@5": 0.847,
+        "recall@10": 0.887,
+        "mrr@10": 0.779,
+        "n": 124
+      },
+      "zh_bm25": {
+        "recall@1": 0.267,
+        "recall@5": 0.267,
+        "recall@10": 0.283,
+        "mrr@10": 0.269,
+        "n": 60
+      },
+      "zh_bm25_expand": {
+        "recall@1": 0.783,
+        "recall@5": 0.867,
+        "recall@10": 0.917,
+        "mrr@10": 0.823,
+        "n": 60,
+        "expand_failed_rate": 0.0
+      },
+      "seconds": 16.0
+    },
+    "missing": {
+      "paragraphs": 20,
+      "sentences": 72,
+      "gold_positive": 26,
+      "flagged": 34,
+      "precision": 0.647,
+      "recall": 0.846,
+      "f1": 0.733,
+      "tp": 22,
+      "fp": 12,
+      "fn": 4,
+      "seconds": 5.7
+    },
+    "latency": {
+      "complete": {
+        "n": 20,
+        "p50_ms": 782,
+        "p95_ms": 1037,
+        "empty_rate": 0.0
+      },
+      "seconds": 15.7
+    }
+  },
+  "llm_usage": {
+    "complete": {
+      "models": [
+        "deepseek/deepseek-chat"
+      ],
+      "calls": 20,
+      "error_rate": 0.0,
+      "p50_ms": 767,
+      "p95_ms": 1024,
+      "prompt_tokens": 4366,
+      "completion_tokens": 304,
+      "cost_usd": 0.0017
+    },
+    "judge": {
+      "models": [
+        "deepseek/deepseek-chat"
+      ],
+      "calls": 715,
+      "error_rate": 0.0,
+      "p50_ms": 805,
+      "p95_ms": 1171,
+      "prompt_tokens": 147318,
+      "completion_tokens": 24755,
+      "cost_usd": 0.0712
+    }
+  },
+  "seconds": 234.9
+}

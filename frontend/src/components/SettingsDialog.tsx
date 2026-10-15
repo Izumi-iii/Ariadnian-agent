@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import {
   Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Collapse, Dialog, FormControlLabel, IconButton, InputAdornment,
-  Link, Radio, RadioGroup, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography,
+  Link, Radio, RadioGroup, Switch, TextField, Tooltip, Typography,
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined'
@@ -15,7 +15,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ErrorIcon from '@mui/icons-material/Error'
 import { api } from '../lib/api'
 import { useApp, type SettingsTab } from '../lib/appContext'
-import type { SettingsView, TestResult, TierStats } from '../lib/types'
+import type { SettingsView, TestResult } from '../lib/types'
+import { UsagePanel } from './UsagePanel'
 import { brand, card } from '../theme'
 
 /** 网页里「明确留空」，不回退到 .env 的旧值 */
@@ -159,6 +160,87 @@ function SecretField({
   )
 }
 
+// ------------------------------------------------------------------ 可拖拽调整大小
+const SIZE_KEY = 'aria.settings.size'
+const MIN_W = 680
+const MIN_H = 460
+
+function clampSize(w: number, h: number) {
+  const maxW = Math.max(MIN_W, window.innerWidth - 32)
+  const maxH = Math.max(MIN_H, window.innerHeight - 32)
+  return { w: Math.round(Math.min(maxW, Math.max(MIN_W, w))), h: Math.round(Math.min(maxH, Math.max(MIN_H, h))) }
+}
+
+/** 设置窗口的宽高：拖右边、下边或右下角调整，记在浏览器里，下次打开保持 */
+function useResizableSize() {
+  const [size, setSize] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SIZE_KEY) || 'null')
+      if (saved && typeof saved.w === 'number' && typeof saved.h === 'number') return clampSize(saved.w, saved.h)
+    } catch {
+      /* 读不到就用默认大小 */
+    }
+    return clampSize(900, 760)
+  })
+
+  useEffect(() => {
+    const onResize = () => setSize((s) => clampSize(s.w, s.h))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  const start = useCallback(
+    (dir: 'x' | 'y' | 'xy') => (e: ReactPointerEvent) => {
+      e.preventDefault()
+      const x0 = e.clientX
+      const y0 = e.clientY
+      const { w: w0, h: h0 } = size
+      let last = size
+      // 窗口居中显示，边缘移动 1px 需要尺寸变化 2px，拖动才跟手
+      const move = (ev: PointerEvent) => {
+        last = clampSize(dir === 'y' ? w0 : w0 + (ev.clientX - x0) * 2, dir === 'x' ? h0 : h0 + (ev.clientY - y0) * 2)
+        setSize(last)
+      }
+      const up = () => {
+        window.removeEventListener('pointermove', move)
+        window.removeEventListener('pointerup', up)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+        try {
+          localStorage.setItem(SIZE_KEY, JSON.stringify(last))
+        } catch {
+          /* 存不了就算了 */
+        }
+      }
+      document.body.style.cursor = dir === 'x' ? 'ew-resize' : dir === 'y' ? 'ns-resize' : 'nwse-resize'
+      document.body.style.userSelect = 'none'
+      window.addEventListener('pointermove', move)
+      window.addEventListener('pointerup', up)
+    },
+    [size],
+  )
+  return { size, start }
+}
+
+function ResizeHandles({ start }: { start: (dir: 'x' | 'y' | 'xy') => (e: ReactPointerEvent) => void }) {
+  return (
+    <>
+      <Box onPointerDown={start('x')} sx={{ position: 'absolute', top: 0, right: 0, width: 6, height: '100%', cursor: 'ew-resize', zIndex: 2 }} />
+      <Box onPointerDown={start('y')} sx={{ position: 'absolute', left: 0, bottom: 0, height: 6, width: '100%', cursor: 'ns-resize', zIndex: 2 }} />
+      <Box
+        onPointerDown={start('xy')}
+        aria-label="拖动调整窗口大小"
+        sx={{
+          position: 'absolute', right: 2, bottom: 2, width: 16, height: 16, cursor: 'nwse-resize', zIndex: 3,
+          // 右下角三条斜线的拖拽提示
+          background: `linear-gradient(135deg, transparent 0 55%, ${brand.faint} 55% 60%, transparent 60% 70%, ${brand.faint} 70% 75%, transparent 75% 85%, ${brand.faint} 85% 90%, transparent 90%)`,
+          opacity: 0.7, '&:hover': { opacity: 1 },
+        }}
+      />
+    </>
+  )
+}
+
 // ------------------------------------------------------------------ 主组件
 export function SettingsDialog() {
   const { settingsTab, openSettings, closeSettings, refreshHealth, notify } = useApp()
@@ -169,14 +251,13 @@ export function SettingsDialog() {
   const [tests, setTests] = useState<Record<string, TestResult | null>>({})
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [advanced, setAdvanced] = useState(false)
-  const [stats, setStats] = useState<Record<string, TierStats> | null>(null)
+  const { size, start } = useResizableSize()
 
   useEffect(() => {
     if (!open) return
     setDraft({})
     setTests({})
     api.settings().then(setView).catch((e) => notify(`读取设置失败：${e.message}`, 'error'))
-    api.llmStats().then((s) => setStats(s.tiers)).catch(() => setStats(null))
   }, [open, notify])
 
   const set = (k: string, v: string | null) => setDraft((d) => ({ ...d, [k]: v }))
@@ -267,7 +348,22 @@ export function SettingsDialog() {
   }
 
   return (
-    <Dialog open={open} onClose={closeSettings} maxWidth="md" fullWidth slotProps={{ paper: { sx: { height: 'min(760px, 92vh)', overflow: 'hidden' } } }}>
+    <Dialog
+      open={open}
+      onClose={closeSettings}
+      maxWidth={false}
+      slotProps={{
+        paper: {
+          sx: {
+            width: size.w, height: size.h, maxWidth: 'none', maxHeight: 'none', m: 2, overflow: 'hidden', position: 'relative',
+            // 输入框上方的标签用蓝色，和边框区分开
+            '& .MuiInputLabel-root': { color: brand.blue, fontWeight: 500 },
+            '& .MuiInputLabel-root.Mui-disabled': { color: brand.faint },
+          },
+        },
+      }}
+    >
+      <ResizeHandles start={start} />
       <Box sx={{ display: 'flex', height: '100%' }}>
         {/* 左侧导航 */}
         <Box sx={{ width: 168, flexShrink: 0, bgcolor: '#fafafa', borderRight: `1px solid ${brand.lineSoft}`, py: 2 }}>
@@ -350,7 +446,7 @@ export function SettingsDialog() {
                 </Section>
 
                 <Section title="连接">
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
                     {currentPreset !== 'ollama' && <SecretField label="API Key" name="LLM_API_KEY" view={view} draft={draft} set={set} />}
                     <TextField
                       fullWidth
@@ -418,13 +514,13 @@ export function SettingsDialog() {
                     const up = t.key.toUpperCase()
                     const eff = view.tiers[t.key]
                     return (
-                      <Box key={t.key} sx={{ ...card.plain, borderRadius: '8px', p: 1.5, mb: 1.25 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'baseline', mb: 1 }}>
+                      <Box key={t.key} sx={{ ...card.plain, borderRadius: '8px', p: 2, mb: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'baseline', mb: 1.75 }}>
                           <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{t.label}</Typography>
-                          <Typography sx={{ fontSize: 12, color: brand.muted, ml: 1, flex: 1 }}>{t.desc}</Typography>
-                          <Typography sx={{ fontSize: 11.5, color: brand.faint, fontFamily: 'Roboto Mono' }}>当前：{eff.model}</Typography>
+                          <Typography noWrap title={t.desc} sx={{ fontSize: 12, color: brand.muted, ml: 1, flex: 1, minWidth: 0 }}>{t.desc}</Typography>
+                          <Typography sx={{ fontSize: 11.5, color: brand.faint, fontFamily: 'Roboto Mono', ml: 1.5, flexShrink: 0, whiteSpace: 'nowrap' }}>当前：{eff.model}</Typography>
                         </Box>
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 1 }}>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 110px', columnGap: 1.25, rowGap: 2 }}>
                           <TextField label="模型" placeholder={`继承${t.inherit === 'MODEL_ID' ? '主模型' : '快模型'}`} value={val(`MODEL_${up}`)} onChange={(e) => set(`MODEL_${up}`, e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
                           <TextField label="超时（秒）" placeholder={String(eff.timeout)} value={val(`MODEL_${up}_TIMEOUT`)} onChange={(e) => set(`MODEL_${up}_TIMEOUT`, e.target.value.replace(/\D/g, ''))} slotProps={{ inputLabel: { shrink: true } }} />
                           <TextField label="接口地址" placeholder="继承上面的接口地址" value={val(`MODEL_${up}_API_BASE`)} onChange={(e) => set(`MODEL_${up}_API_BASE`, e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
@@ -543,7 +639,7 @@ export function SettingsDialog() {
                   </RadioGroup>
                 </Section>
                 {(val('EMBEDDING_PROVIDER') || 'none') !== 'none' && (
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
                     <TextField label="向量模型" placeholder="bge-m3" value={val('EMBEDDING_MODEL')} onChange={(e) => set('EMBEDDING_MODEL', e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
                     <TextField
                       label="接口地址"
@@ -561,43 +657,7 @@ export function SettingsDialog() {
               </>
             ) : (
               <>
-                <Section title="各档模型调用统计" desc="最近 30 天。费用由 LiteLLM 按公开价格估算，部分国内模型可能没有价格数据。">
-                  <Table size="small" sx={{ '& td, & th': { borderColor: brand.lineSoft, fontSize: 12.5, py: 1 } }}>
-                    <TableHead>
-                      <TableRow sx={{ '& th': { color: brand.muted, fontWeight: 500 } }}>
-                        <TableCell>档位</TableCell>
-                        <TableCell>模型</TableCell>
-                        <TableCell align="right">调用</TableCell>
-                        <TableCell align="right">P50 / P95</TableCell>
-                        <TableCell align="right">首 token</TableCell>
-                        <TableCell align="right">tokens</TableCell>
-                        <TableCell align="right">费用</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {TIERS.map((t) => {
-                        const s = stats?.[t.key]
-                        const ms = (v: number | null | undefined) => (v == null ? '—' : v >= 1000 ? `${(v / 1000).toFixed(1)} s` : `${v} ms`)
-                        return (
-                          <TableRow key={t.key}>
-                            <TableCell>{t.label}</TableCell>
-                            <TableCell sx={{ fontFamily: 'Roboto Mono', fontSize: '12px !important' }}>{view.tiers[t.key].model}</TableCell>
-                            <TableCell align="right">
-                              {s?.calls ?? 0}
-                              {s?.errors ? <Box component="span" sx={{ color: brand.red }}> · {s.errors} 失败</Box> : null}
-                            </TableCell>
-                            <TableCell align="right">
-                              {ms(s?.latency_p50_ms)} / {ms(s?.latency_p95_ms)}
-                            </TableCell>
-                            <TableCell align="right">{ms(s?.first_token_p50_ms)}</TableCell>
-                            <TableCell align="right">{s ? (s.prompt_tokens + s.completion_tokens).toLocaleString() : '—'}</TableCell>
-                            <TableCell align="right">{s?.cost_usd ? `$${s.cost_usd}` : '—'}</TableCell>
-                          </TableRow>
-                        )
-                      })}
-                    </TableBody>
-                  </Table>
-                </Section>
+                <UsagePanel tiers={TIERS} priceRaw={val('MODEL_PRICES')} onPriceChange={(v) => set('MODEL_PRICES', v)} reloadKey={view} />
               </>
             )}
           </Box>

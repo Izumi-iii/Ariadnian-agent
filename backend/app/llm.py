@@ -109,16 +109,33 @@ def _log(tier: str, model: str, *, stream: bool, ok: bool, latency: float, first
 
         pt = getattr(usage, "prompt_tokens", None) if usage else None
         ct = getattr(usage, "completion_tokens", None) if usage else None
+        cached = _cached_tokens(usage)
         with get_conn() as conn:
             conn.execute(
                 "INSERT INTO llm_calls (tier, model, stream, ok, latency_ms, first_token_ms, prompt_tokens,"
-                " completion_tokens, cost_usd, error) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                " completion_tokens, cached_tokens, cost_usd, error) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (tier, model, int(stream), int(ok), int(latency * 1000),
-                 int(first_token * 1000) if first_token is not None else None, pt, ct, cost,
+                 int(first_token * 1000) if first_token is not None else None, pt, ct, cached, cost,
                  (error or "")[:300] or None),
             )
     except Exception:  # 日志失败不能影响主流程
         pass
+
+
+def _cached_tokens(usage: Any) -> int | None:
+    """命中缓存的输入 tokens：DeepSeek 用 prompt_cache_hit_tokens，OpenAI 兼容接口用 prompt_tokens_details.cached_tokens"""
+    if not usage:
+        return None
+    v = getattr(usage, "prompt_cache_hit_tokens", None)
+    if v is None:
+        details = getattr(usage, "prompt_tokens_details", None)
+        v = getattr(details, "cached_tokens", None) if details is not None else None
+        if v is None and isinstance(details, dict):
+            v = details.get("cached_tokens")
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _cost(resp: Any) -> float | None:
@@ -170,7 +187,17 @@ def chat(
                 resp = litellm.completion(**kw)
             _log(tier, model, stream=False, ok=True, latency=time.perf_counter() - start,
                  usage=getattr(resp, "usage", None), cost=_cost(resp))
-            return resp.choices[0].message.content or ""
+            text = resp.choices[0].message.content or ""
+            if not text.strip() and max_tokens and getattr(resp.choices[0], "finish_reason", None) == "length":
+                # 推理模型会先输出思考过程，思考就把 max_tokens 用完时正文是空的 → 去掉上限再试一次
+                # （思考长度不可预测，放宽到固定值仍可能不够；更好的做法是给这一档换非推理模型）
+                kw["max_tokens"] = None
+                start = time.perf_counter()
+                resp = litellm.completion(**kw)
+                _log(tier, model, stream=False, ok=True, latency=time.perf_counter() - start,
+                     usage=getattr(resp, "usage", None), cost=_cost(resp))
+                text = resp.choices[0].message.content or ""
+            return text
         except Exception as e:  # noqa: BLE001
             _log(tier, model, stream=False, ok=False, latency=time.perf_counter() - start, error=repr(e))
             last_err = e
@@ -270,29 +297,79 @@ def _pct(values: list[int], p: float) -> int | None:
 
 
 def stats(days: int = 30) -> dict[str, Any]:
+    """用量统计：各档汇总、按天趋势、按模型明细。费用按 pricing.py 的价格表（人民币）计算。"""
+    from datetime import datetime, timedelta, timezone
+
+    from . import pricing
     from .db import get_conn
 
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(
-            "SELECT * FROM llm_calls WHERE ts >= datetime('now', ?)", (f"-{days} days",)
+            "SELECT * FROM llm_calls WHERE ts >= datetime('now', ?) ORDER BY ts", (f"-{days} days",)
         )]
-    out: dict[str, Any] = {}
-    for tier in ("complete", "write", "judge", "agent"):
-        rs = [r for r in rows if r["tier"] == tier]
+    custom = pricing.custom_prices()
+    prices = {m: pricing.price_for(m, custom) for m in {r["model"] for r in rows}}
+    for r in rows:
+        r["cost_cny"] = pricing.call_cost(r, prices[r["model"]]) if r["ok"] else None
+        # 按北京时间归到某一天
+        try:
+            t = datetime.fromisoformat(r["ts"].replace(" ", "T")).replace(tzinfo=timezone.utc)
+            r["day"] = (t + timedelta(hours=8)).strftime("%Y-%m-%d")
+        except (ValueError, AttributeError):
+            r["day"] = None
+
+    def agg(rs: list[dict]) -> dict[str, Any]:
         ok = [r for r in rs if r["ok"]]
         lat = [r["latency_ms"] for r in ok if r["latency_ms"] is not None]
         ftk = [r["first_token_ms"] for r in ok if r["first_token_ms"] is not None]
-        out[tier] = {
+        costs = [r["cost_cny"] for r in ok if r["cost_cny"] is not None]
+        return {
             "calls": len(rs),
             "errors": len(rs) - len(ok),
             "latency_p50_ms": _pct(lat, 0.5),
             "latency_p95_ms": _pct(lat, 0.95),
             "first_token_p50_ms": _pct(ftk, 0.5),
             "prompt_tokens": sum(r["prompt_tokens"] or 0 for r in ok),
+            "cached_tokens": sum(r.get("cached_tokens") or 0 for r in ok),
             "completion_tokens": sum(r["completion_tokens"] or 0 for r in ok),
+            "cost_cny": round(sum(costs), 4) if costs else None,
+            "unpriced_calls": sum(1 for r in ok if r["cost_cny"] is None),
             "cost_usd": round(sum(r["cost_usd"] or 0 for r in ok), 4),
         }
-    return {"days": days, "tiers": out}
+
+    tiers = {t: agg([r for r in rows if r["tier"] == t]) for t in ("complete", "write", "judge", "agent")}
+
+    # 按天：补齐没有调用的日期，图表横轴连续
+    today = (datetime.now(timezone.utc) + timedelta(hours=8)).date()
+    span = min(days, 90)
+    daily = []
+    for i in range(span - 1, -1, -1):
+        d = (today - timedelta(days=i)).isoformat()
+        day_rows = [r for r in rows if r["day"] == d]
+        entry: dict[str, Any] = {"date": d, "tiers": {}}
+        for t in ("complete", "write", "judge", "agent"):
+            rs = [r for r in day_rows if r["tier"] == t and r["ok"]]
+            entry["tiers"][t] = {
+                "calls": len(rs),
+                "tokens": sum((r["prompt_tokens"] or 0) + (r["completion_tokens"] or 0) for r in rs),
+                "cost_cny": round(sum(r["cost_cny"] or 0 for r in rs), 6),
+            }
+        daily.append(entry)
+
+    models = []
+    for m in sorted(prices):
+        a_ = agg([r for r in rows if r["model"] == m])
+        p = prices[m]
+        a_.update({"model": m, "price": None if p is None else {
+            "input": p.input, "cached": p.cached, "output": p.output,
+            "peak_multiplier": p.peak_multiplier, "source": p.source, "note": p.note}})
+        models.append(a_)
+    models.sort(key=lambda x: -(x["cost_cny"] or 0))
+
+    return {
+        "days": days, "tiers": tiers, "daily": daily, "models": models, "total": agg(rows),
+        "currency": "CNY", "prices_checked": pricing.CHECKED, "pricing_pages": pricing.PRICING_PAGES,
+    }
 
 
 # ---------------------------------------------------------------------------

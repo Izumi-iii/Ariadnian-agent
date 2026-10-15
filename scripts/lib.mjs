@@ -18,8 +18,15 @@ export const fail = (msg) => {
   process.exit(1)
 }
 
+// Windows 上 npm / npx 是 .cmd 脚本，必须经过 shell 才能执行。新版 Node 不允许“shell + 参数数组”
+// （DEP0190 警告），所以在 Windows 上把命令和参数拼成一条带引号的命令行再交给 shell
+const quote = (a) => (/[\s"&|<>^()]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)
+function cmdline(cmd, args) {
+  return isWin ? [[cmd, ...args].map(quote).join(' '), []] : [cmd, args]
+}
+
 export function has(cmd) {
-  const r = spawnSync(cmd, ['--version'], { shell: isWin, stdio: 'ignore' })
+  const r = spawnSync(...cmdline(cmd, ['--version']), { shell: isWin, stdio: 'ignore' })
   return r.status === 0
 }
 
@@ -31,13 +38,13 @@ export function requireTools() {
 /** 同步执行一条命令，失败就退出 */
 export function run(cmd, args, opts = {}) {
   console.log(paint('dim', `$ ${cmd} ${args.join(' ')}`))
-  const r = spawnSync(cmd, args, { stdio: 'inherit', shell: isWin, ...opts })
+  const r = spawnSync(...cmdline(cmd, args), { stdio: 'inherit', shell: isWin, ...opts })
   if (r.status !== 0) fail(`命令失败：${cmd} ${args.join(' ')}`)
 }
 
 /** 启动一个长期运行的子进程，输出加上带颜色的前缀 */
 export function serve(name, cmd, args, opts = {}) {
-  const child = spawn(cmd, args, { shell: isWin, env: { ...process.env, FORCE_COLOR: '1', ...opts.env }, cwd: opts.cwd ?? ROOT })
+  const child = spawn(...cmdline(cmd, args), { shell: isWin, env: { ...process.env, FORCE_COLOR: '1', ...opts.env }, cwd: opts.cwd ?? ROOT })
   const prefix = paint(name, `[${name}]`)
   const pipe = (stream) => {
     let buf = ''
