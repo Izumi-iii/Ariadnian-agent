@@ -2,7 +2,7 @@
 import sys
 from html import escape
 
-W, H = 1200, 1440
+W, H = 1200, 1418
 OUT = sys.argv[1] if len(sys.argv) > 1 else str(__import__("pathlib").Path(__file__).with_name("architecture.svg"))
 
 SANS = "'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif"
@@ -335,7 +335,6 @@ add('<circle cx="76" cy="1369" r="13" fill="#ffd970"><animate attributeName="opa
     '<rect x="71" y="1380" width="10" height="6" rx="1.5" fill="#c9a24a"/>')
 t(104, 1365, "快速路径管写作时的即时反馈；Agent 路径管需要你确认的长任务。", 14, C["ink"], 500)
 t(104, 1386, "两条路径共用同一个文献库，模型可在网页里随时切换，所有引用都对照原文核查。", 13, C["fg"])
-t(W / 2, 1424, "Ariadne · 研究报告助手 —— 纯 SVG 动画，无脚本", 11.5, C["mute"], 400, "middle")
 
 add("</svg>")
 open(OUT, "w", encoding="utf-8").write("\n".join(out))
