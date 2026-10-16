@@ -5,6 +5,16 @@
 <p align="center">
   <a href="https://github.com/tkzzzzzz6/Ariadnian-Agent/actions/workflows/ci.yml"><img src="https://github.com/tkzzzzzz6/Ariadnian-Agent/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <a href="https://github.com/tkzzzzzz6/Ariadnian-Agent/releases"><img src="https://img.shields.io/github/v/release/tkzzzzzz6/Ariadnian-Agent?include_prereleases&label=%E4%B8%8B%E8%BD%BD" alt="Release"/></a>
+  <img src="https://img.shields.io/github/last-commit/tkzzzzzz6/Ariadnian-Agent?style=flat&label=%E6%9C%80%E8%BF%91%E6%8F%90%E4%BA%A4" alt="Last commit"/>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat&logo=python&logoColor=white" alt="Python"/>
+  <img src="https://img.shields.io/badge/Node-20%2B-339933?style=flat&logo=nodedotjs&logoColor=white" alt="Node"/>
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white" alt="FastAPI"/>
+  <img src="https://img.shields.io/badge/React-61DAFB?style=flat&logo=react&logoColor=20232A" alt="React"/>
+  <img src="https://img.shields.io/badge/LangGraph-1f9c9c?style=flat&logo=langgraph&logoColor=white" alt="LangGraph"/>
+  <img src="https://img.shields.io/badge/Electron-47848F?style=flat&logo=electron&logoColor=white" alt="Electron"/>
 </p>
 
 Ariadne 是一个帮你**快速走进一个陌生研究领域**的研究报告写作助手。它不替你写，而是把「读懂一个领域」拆成三步，让理解留在你自己脑子里：
@@ -12,8 +22,6 @@ Ariadne 是一个帮你**快速走进一个陌生研究领域**的研究报告�
 1. **AI 检索，搭出骨架**：输入感兴趣的主题，综述 Agent 检索论文、提炼要点，给出一份带出处的大纲。
 2. **你来审阅，形成理解**：Agent 在「选哪些文献」「大纲怎么定」两处停下来等你确认。逐篇取舍、改写大纲的过程，就是你理清这个领域脉络的过程。
 3. **边写边纠错，加深记忆**：动手写作时有续写、改写和 `@` 插入引用帮忙；页边批注会核查每一处引用是否真的被原文支撑、指出缺少依据的论断。被指出过的错误，往往记得最牢。
-
-**你自己写，AI 在旁边帮忙**，每一处引用都能追溯到原文。
 
 > 名字来自阿里阿德涅之线 —— 在文献的迷宫里牵一根线，每一处引用都能追溯到原文。
 
