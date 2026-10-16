@@ -159,6 +159,8 @@ git push origin v0.2.0
 
 几分钟后 Releases 页面会出现 `Ariadne-Setup-0.2.0.exe`、`Ariadne-0.2.0-mac-arm64.dmg`、`Ariadne-0.2.0-linux-x86_64.AppImage`。CI 上安装 Python 依赖时用官方 PyPI（仓库默认的清华镜像只在本地生效）。
 
+Release 说明由 GitHub 自动生成，分类规则写在 `.github/release.yml`。它按 **PR label** 分章节，不解析 commit 前缀 —— 想让更新说明分出「新功能 / 缺陷修复 / 文档 / 构建」，给 PR 打上 `feature`、`bug`、`documentation`、`ci` 等 label 即可，没打 label 的会落到「其他变更」。
+
 ## 配置要点
 
 **推荐在网页里配置**：右上角 ⚙ 打开「设置」，可以配置模型（选服务商预设、填 API Key、主模型和快模型，高级里还能按四档分别配置）、文献检索（Semantic Scholar / OpenAlex 的 key、默认来源、缓存天数）、向量检索，并查看各档模型的用量统计。每一项都有「测试」按钮，保存后立即生效，不用重启。

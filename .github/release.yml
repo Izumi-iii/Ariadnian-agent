@@ -1,93 +1,38 @@
-# 推送 v* 标签（如 git tag v0.2.0 && git push --tags）：
-# 在 Windows / macOS / Linux 上分别打包桌面版，然后创建 GitHub Release 并上传安装包。
-# 也可以在 Actions 页面手动运行，只打包不发布（产物在运行记录的 Artifacts 里）。
-name: Release
-
-on:
-  push:
-    tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 版本号（手动运行时只打包、不发布）
-        required: false
-        default: 0.0.0-dev
-
-permissions:
-  contents: write
-
-env:
-  UV_DEFAULT_INDEX: https://pypi.org/simple
-  PYTHONUTF8: "1"
-  # 没有代码签名证书：跳过签名（安装时系统会提示来源未知）
-  CSC_IDENTITY_AUTO_DISCOVERY: "false"
-
-jobs:
-  build:
-    name: 打包 (${{ matrix.name }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: windows-latest, name: windows }
-          - { os: macos-latest, name: macos }
-          - { os: ubuntu-latest, name: linux }
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-dependency-glob: backend/pyproject.toml
-
-      - name: 安装 Python
-        working-directory: backend
-        run: uv python install
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-
-      - name: 确定版本号
-        shell: bash
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="${INPUT_VERSION:-0.0.0-dev}"; fi
-          echo "ARIADNE_VERSION=$v" >> "$GITHUB_ENV"
-          echo "版本号：$v"
-
-      - name: 安装依赖
-        run: npm run setup
-
-      - name: 打包桌面版
-        run: npm run desktop
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ariadne-${{ matrix.name }}
-          path: |
-            desktop/dist/*.exe
-            desktop/dist/*.zip
-            desktop/dist/*.dmg
-            desktop/dist/*.AppImage
-          if-no-files-found: error
-          retention-days: 14
-
-  release:
-    name: 发布 GitHub Release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          path: dist
-          merge-multiple: true
-
-      - uses: softprops/action-gh-release@v3
-        with:
-          files: dist/*
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+# 自动生成 Release 说明的分类规则（对应 workflows/release.yml 里的 generate_release_notes: true）
+# GitHub 的自动生成器以「合入的 PR」为数据源，按 PR label 归类，
+# 不会解析 commit message 前缀（feat: / fix: ...），所以要靠这里的 label 配置才能分出章节。
+# 用法：给 PR 打上对应 label；没有 label 的 PR 会落到最后的「其他变更」。
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+    authors:
+      - dependabot          # 只检查 Actions 版本升级，不必写进用户可见的更新说明
+  categories:
+    - title: 💥 破坏性变更
+      labels:
+        - breaking-change
+        - semver-major
+    - title: ✨ 新功能
+      labels:
+        - enhancement
+        - feature
+        - semver-minor
+    - title: 🐛 缺陷修复
+      labels:
+        - bug
+        - fix
+    - title: 📖 文档
+      labels:
+        - documentation
+    - title: 📦 依赖更新
+      labels:
+        - dependencies
+    - title: ⚙️ 构建与 CI
+      labels:
+        - ci
+        - build
+        - chore
+    - title: 🔧 其他变更
+      labels:
+        - "*"                 # 兜底：任何没被上面匹配到的 PR 都会落到这里
