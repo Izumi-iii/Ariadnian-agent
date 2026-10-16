@@ -6,15 +6,8 @@
   <a href="https://github.com/tkzzzzzz6/Ariadnian-Agent/actions/workflows/ci.yml"><img src="https://github.com/tkzzzzzz6/Ariadnian-Agent/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <a href="https://github.com/tkzzzzzz6/Ariadnian-Agent/releases"><img src="https://img.shields.io/github/v/release/tkzzzzzz6/Ariadnian-Agent?include_prereleases&label=%E4%B8%8B%E8%BD%BD" alt="Release"/></a>
   <img src="https://img.shields.io/github/last-commit/tkzzzzzz6/Ariadnian-Agent?style=flat&label=%E6%9C%80%E8%BF%91%E6%8F%90%E4%BA%A4" alt="Last commit"/>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat&logo=python&logoColor=white" alt="Python"/>
-  <img src="https://img.shields.io/badge/Node-20%2B-339933?style=flat&logo=nodedotjs&logoColor=white" alt="Node"/>
-  <img src="https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white" alt="FastAPI"/>
-  <img src="https://img.shields.io/badge/React-61DAFB?style=flat&logo=react&logoColor=20232A" alt="React"/>
   <img src="https://img.shields.io/badge/LangGraph-1f9c9c?style=flat&logo=langgraph&logoColor=white" alt="LangGraph"/>
-  <img src="https://img.shields.io/badge/Electron-47848F?style=flat&logo=electron&logoColor=white" alt="Electron"/>
+  <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat&logo=python&logoColor=white" alt="Python"/>
 </p>
 
 Ariadne 是一个帮你**快速走进一个陌生研究领域**的研究报告写作助手。它不替你写，而是把「读懂一个领域」拆成三步，让理解留在你自己脑子里：
