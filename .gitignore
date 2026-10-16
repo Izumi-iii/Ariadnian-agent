@@ -8,14 +8,17 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+# 注意：下面几个目录名来自通用 Python/Node 模板，必须用「/」锚定到仓库根目录。
+# 否则 `lib/` 会连带忽略 frontend/src/lib/（源码），`build/` 会连带忽略
+# desktop/electron/build/（打包用的图标，属于源码）。项目自己的产物目录另见文末。
+/build/
 develop-eggs/
 dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -223,7 +226,9 @@ __marimo__/
 .env
 
 # uv
-uv.lock
+# 本项目是应用（pyproject.toml 里 package = false）而不是库，所以 uv.lock 必须提交：
+# 否则 CI 的 uv sync 和桌面版打包每次都会解析出不同的依赖版本，构建不可复现。
+# uv.lock
 # ---- Ariadne 论文写作助手 ----
 node_modules/
 frontend/dist/
