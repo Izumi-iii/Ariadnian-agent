@@ -12,6 +12,7 @@ from ..config import get_settings
 from ..db import get_conn
 from ..ingest import chunk_plain_text, guess_pdf_metadata, index_abstract, index_pdf, store_chunks
 from ..library import PaperIn, add_paper, bibtex_for, delete_paper, get_paper, list_papers, update_paper
+from ..security import UnsafeURL, max_upload_bytes
 
 router = APIRouter(prefix="/api/papers", tags=["papers"])
 
@@ -75,9 +76,17 @@ async def papers_upload(file: UploadFile = File(...), paper_id: str | None = For
         raise HTTPException(400, "目前支持 PDF / TXT / Markdown")
     pdf_dir = get_settings().data_dir / "pdfs"
     pdf_dir.mkdir(parents=True, exist_ok=True)
+    limit = max_upload_bytes()
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:  # 跨平台临时文件（修复旧版 /tmp 路径问题）
-        shutil.copyfileobj(file.file, tmp)
         tmp_path = Path(tmp.name)
+        size = 0
+        while block := file.file.read(1024 * 1024):
+            size += len(block)
+            if size > limit:
+                tmp.close()
+                tmp_path.unlink(missing_ok=True)
+                raise HTTPException(413, f"文件超过 {limit // (1024 * 1024)} MB 上限")
+            tmp.write(block)
     try:
         if paper_id:
             paper = get_paper(paper_id)
@@ -110,6 +119,8 @@ def papers_fetch_fulltext(pid: str):
     try:
         path = scholar.download_pdf(paper.pdf_url, get_settings().data_dir / "pdfs" / f"{pid}.pdf")
         n = index_pdf(pid, path)
+    except UnsafeURL as e:
+        raise HTTPException(400, str(e)) from e
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"下载或解析失败：{e}") from e
     return {"paper": get_paper(pid), "chunks": n}

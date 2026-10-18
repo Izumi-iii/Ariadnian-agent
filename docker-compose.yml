@@ -1,0 +1,46 @@
+# Ariadne 网页版部署
+#
+#   cp deploy/ariadne.env.example deploy/ariadne.env   # 填访问密码和模型 Key
+#   docker compose up -d --build                         # 从源码构建并启动，打开 http://服务器IP:8000
+#
+# 有域名、想要 HTTPS（公网部署推荐）：在 deploy/ariadne.env 里填 DOMAIN，然后
+#   ARIA_BIND=127.0.0.1 docker compose --profile https up -d --build
+#
+# 不想在服务器上构建，可以直接用 CI 发布的镜像：
+#   docker compose pull && docker compose up -d
+name: ariadne
+
+services:
+  ariadne:
+    image: ${ARIADNE_IMAGE:-ghcr.io/tkzzzzzz6/ariadnian-agent:latest}
+    build: .
+    restart: unless-stopped
+    env_file: deploy/ariadne.env
+    ports:
+      # 启用 https 时把 ARIA_BIND 设成 127.0.0.1，只让 Caddy 访问
+      - "${ARIA_BIND:-0.0.0.0}:${ARIA_PORT:-8000}:8000"
+    volumes:
+      - ariadne-data:/data
+    # 限制资源，防止一个人把服务器拖垮
+    mem_limit: 2g
+    cpus: 2
+
+  caddy:
+    image: caddy:2
+    profiles: [https]
+    restart: unless-stopped
+    env_file: deploy/ariadne.env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - ariadne
+
+volumes:
+  ariadne-data:
+  caddy-data:
+  caddy-config:

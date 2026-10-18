@@ -116,6 +116,8 @@ export interface SettingsView {
   llm_ready: boolean
   fake: boolean
   settings_file: string
+  /** 服务器设置了 ARIA_LOCK_SETTINGS：只能查看，不能修改 */
+  locked?: boolean
 }
 
 export interface TestResult {

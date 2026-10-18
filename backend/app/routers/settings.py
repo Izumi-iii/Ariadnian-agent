@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import config, llm, scholar
+from ..security import settings_locked
 from ..config import OVERRIDABLE_KEYS, SECRET_KEYS, TIERS, get_settings, load_overrides, save_overrides, value_source
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -48,6 +49,7 @@ def _view() -> dict:
         "llm_ready": s.llm_ready,
         "fake": s.llm_fake,
         "settings_file": str(config.settings_path()),
+        "locked": settings_locked(),
     }
 
 
@@ -62,6 +64,8 @@ class SettingsIn(BaseModel):
 
 @router.put("")
 def write_settings(body: SettingsIn):
+    if settings_locked():
+        raise HTTPException(403, "管理员已锁定设置（ARIA_LOCK_SETTINGS），只能查看不能修改")
     changes: dict[str, str | None] = {}
     for k, v in body.values.items():
         if k not in OVERRIDABLE_KEYS:
@@ -103,6 +107,9 @@ class TestLLMIn(BaseModel):
 
 @router.post("/test-llm")
 def test_llm(body: TestLLMIn):
+    if settings_locked() and (body.model or body.api_base is not None or body.api_key):
+        # 锁定时只能测试已保存的配置：否则可以把服务器上的密钥发到任意地址
+        raise HTTPException(403, "管理员已锁定设置，只能测试已保存的模型配置")
     s = get_settings()
     base_tier = s.tiers.get(body.tier or "write") or s.tiers["write"]
     model = (body.model or "").strip() or base_tier.model

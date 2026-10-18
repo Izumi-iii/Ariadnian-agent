@@ -1,0 +1,78 @@
+# 网页版 Docker 镜像：
+#   - 推送 v* 标签：构建并发布到 GitHub Container Registry（ghcr.io/<用户名>/<仓库名>:0.2.0 和 :latest）
+#   - main 分支有提交：发布 :edge（最新开发版）
+#   - PR 改动了镜像相关文件：只构建、不发布，确认 Dockerfile 没写坏
+# 发布到 ghcr.io 使用自带的 GITHUB_TOKEN，不需要额外配置密钥。
+name: Docker
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - docker-compose.yml
+      - backend/pyproject.toml
+      - frontend/package*.json
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: 登录 ghcr.io
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成镜像标签
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
+            type=edge,branch=main
+            type=edge,branch=master
+            type=ref,event=pr
+
+      - name: 构建并发布
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 冒烟测试（PR：启动容器，检查健康检查和访问密码）
+        if: github.event_name == 'pull_request'
+        env:
+          IMAGE: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+        run: |
+          docker run -d --name smoke -p 8000:8000 -e ARIA_PASSWORD=ci -e LLM_FAKE=1 "$IMAGE"
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8000/api/health && break; sleep 1; done
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/)" = 401
+          curl -sf -u x:ci http://127.0.0.1:8000/ | grep -q '<title>'
+          docker logs smoke | tail -20

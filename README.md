@@ -113,7 +113,7 @@ npm run dev       # 开发：后端 :8000 + 前端 :5173 一起启动，热更�
 | `npm run dev` | 开发模式，前后端同时启动 |
 | `npm run demo` | 同上，但设置 `LLM_FAKE=1`：不调用模型、不需要 API key，适合演示和调界面 |
 | `npm start` | 生产模式：前端有改动才重新构建，由后端单端口提供服务 http://localhost:8000 |
-| `npm test` | 后端测试（24 个，离线）+ 前端类型检查 |
+| `npm test` | 后端测试（42 个，离线）+ 前端类型检查 |
 | `npm run eval` | 测评引用判断、假引用检出、检索、缺引用检测和续写延迟，见下文「测评」 |
 | `npm run desktop` | 打包 Electron 桌面版（见下文「桌面版」）；加 `-- --dev` 则不打包、直接用桌面窗口运行 |
 
@@ -141,6 +141,36 @@ npm run desktop -- --dev # 不打包，直接用 Electron 窗口运行当前源�
 - **下载加速**：本地打包时 Electron 相关的二进制默认从 npmmirror 镜像下载；设置 `CI=1` 时改用官方源。
 - **首次运行提示**：安装包没有代码签名，Windows 可能提示「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」即可。
 
+## Docker 部署（网页版）
+
+想放到服务器上给同学、课题组用，可以用 Docker 部署。镜像里是构建好的前端加 FastAPI 后端，一个容器、一个端口（8000）；文献库、论文 PDF 和设置都存在数据卷里，升级、重建容器不会丢。
+
+```bash
+cp deploy/ariadne.env.example deploy/ariadne.env   # 填访问密码 ARIA_PASSWORD 和模型 Key
+docker compose up -d --build                         # 从源码构建并启动，访问 http://服务器IP:8000
+```
+
+有域名的话推荐开 HTTPS：在 `deploy/ariadne.env` 里填 `DOMAIN`，域名解析到服务器并放行 80 / 443 端口，然后
+
+```bash
+ARIA_BIND=127.0.0.1 docker compose --profile https up -d --build   # 加一个 Caddy，自动申请并续期证书；8000 端口只对本机开放
+```
+
+不想在服务器上构建，也可以直接用 CI 发布的镜像：`docker compose pull && docker compose up -d`（镜像在 `ghcr.io/tkzzzzzz6/ariadnian-agent`，打过版本标签后才有 `latest`；ghcr.io 上新发布的镜像默认私有，要在 GitHub 的 Packages 页面把它改为 Public 才能匿名拉取）。国内服务器构建慢，可以换源：`docker compose build --build-arg NPM_REGISTRY=https://registry.npmmirror.com --build-arg PYPI_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple`。
+
+**部署给别人用时的安全设置**（都在 `deploy/ariadne.env` 里，本地和桌面版默认不开启，行为不变）：
+
+| 设置 | 作用 |
+|---|---|
+| `ARIA_PASSWORD` | 访问密码。打开网页时浏览器弹出登录框，用户名随意（`ARIA_USERNAME` 可限定）。**镜像默认要求设置**，没设就拒绝启动，避免忘了设密码直接暴露在公网 |
+| `ARIA_LOCK_SETTINGS=1` | 锁定「设置」：其他人只能查看，不能修改模型和密钥，也不能拿服务器上的 Key 去测试别的地址。模型配置写在 `deploy/ariadne.env` 里 |
+| `ARIA_MAX_UPLOAD_MB` | 上传文件大小上限，默认 50 MB；下载论文 PDF 也受这个限制 |
+| `ARIA_ALLOW_PRIVATE_URLS=1` | 允许从内网 / 本机地址下载 PDF。默认禁止（含重定向），防止有人通过修改文献的 PDF 链接探测服务器内网 |
+
+其他细节：容器以普通用户（uid 10001）运行；默认限制 2 GB 内存、2 个 CPU；带健康检查（`/api/health`，不需要密码）。数据卷是 Docker 的命名卷 `ariadne_ariadne-data`，备份可以用 `docker run --rm -v ariadne_ariadne-data:/data -v $PWD:/backup busybox tar czf /backup/ariadne-data.tgz /data`。
+
+> 目前所有人共用**同一个文献库和论文列表**，适合自己或信任的小团队使用；也就是说，有密码的人都能看到、修改彼此的论文。多人账号和数据隔离在路线图里。Basic 认证的密码在 HTTP 下是明文传输的，公网部署请务必开 HTTPS。
+
 ## CI/CD
 
 GitHub Actions 配置在 `.github/workflows/`：
@@ -149,6 +179,7 @@ GitHub Actions 配置在 `.github/workflows/`：
 |---|---|---|
 | `ci.yml` | 每次 push / PR | 后端单元测试（Ubuntu + Windows）、测评冒烟（离线）、前端类型检查与构建 |
 | `release.yml` | 推送 `v*` 标签 | 在 Windows、macOS、Linux 上分别打包桌面版，自动创建 Release 并上传安装包；也可以手动运行，只打包不发布 |
+| `docker.yml` | push 到 main、推送 `v*` 标签、改动镜像相关文件的 PR | 构建网页版 Docker 镜像，发布到 ghcr.io（标签版本号 + `latest`，main 分支为 `edge`）；PR 只构建并启动容器做冒烟测试 |
 | `eval.yml` | 手动 | 用真实模型跑测评，结果写进运行摘要并保存为 Artifact；需要在仓库 Secrets 里添加 `LLM_API_KEY` |
 
 发布新版本：
@@ -219,6 +250,7 @@ Release 说明由 GitHub 自动生成，分类规则写在 `.github/release.yml`
 backend/
   app/
     main.py            FastAPI 入口
+    security.py        部署用的安全设置：访问密码、设置锁定、上传上限、PDF 下载地址检查
     routers/settings.py  网页设置：读取 / 保存（settings.json 覆盖 .env）、测试模型连接与检索来源
     config.py          .env 配置（兼容旧版字段）
     llm.py             LiteLLM 接入层：四档模型、JSON 模式、备用模型、调用统计、LLM_FAKE
@@ -235,8 +267,10 @@ backend/
   tests/
 package.json         一键命令（setup / dev / demo / start / test / eval / desktop）
 scripts/             启动脚本，只用 Node 内置模块，Windows / macOS / Linux 通用
+Dockerfile           网页版镜像（前端构建 + FastAPI），docker-compose.yml 一键部署
+deploy/              部署配置：ariadne.env.example、Caddyfile（HTTPS）
 desktop/             桌面版：Electron 外壳（electron/）、后端入口 server.py、PyInstaller 配置
-.github/workflows/   CI（测试、构建）、Release（三平台打包发布）、模型测评
+.github/workflows/   CI（测试、构建）、Release（三平台打包发布）、Docker 镜像、模型测评
 docs/                架构图（gen_architecture.py 生成）、界面截图、布局草图（layouts/）
 frontend/
   src/
@@ -254,3 +288,4 @@ frontend/
 - [ ] 测评扩展：更多学科的中文段落、全文片段级的引用核查、端到端写作任务
 - [ ] GROBID / MinerU 解析，提升双栏排版和中文 PDF 的解析质量
 - [ ] docx 导出（pandoc）、图表与公式节点
+- [ ] 网页版多人账号：每人独立的文献库和论文，按人统计用量

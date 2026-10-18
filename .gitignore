@@ -241,3 +241,6 @@ Claude output/
 desktop/dist/
 desktop/build/
 !desktop/ariadne.spec
+
+# Docker 部署配置（含密码和密钥）
+deploy/ariadne.env

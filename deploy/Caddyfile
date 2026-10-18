@@ -1,0 +1,9 @@
+# 自动申请并续期 HTTPS 证书（Let's Encrypt）。DOMAIN 在 deploy/ariadne.env 里设置，
+# 域名需要先解析到这台服务器，并放行 80 / 443 端口。
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy ariadne:8000 {
+		# 续写、改写、Agent 都是流式输出，立即转发不缓冲
+		flush_interval -1
+	}
+}

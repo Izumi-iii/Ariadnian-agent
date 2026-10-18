@@ -18,8 +18,10 @@ from .config import get_settings
 from .db import init_db
 from .embeddings import embeddings_enabled
 from .llm import stats, tier_info
+from .security import PasswordMiddleware, check_startup
 from .routers import agent, assist, documents, papers, settings as settings_router
 
+check_startup()
 settings = get_settings()
 init_db()
 
@@ -30,6 +32,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# 设置了 ARIA_PASSWORD 时要求访问密码（部署给别人用时开启；本地和桌面版不设置，不受影响）
+app.add_middleware(PasswordMiddleware)
 
 app.include_router(papers.router)
 app.include_router(documents.router)

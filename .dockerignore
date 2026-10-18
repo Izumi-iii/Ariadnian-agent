@@ -1,0 +1,18 @@
+# 只把构建需要的源码发给 Docker，密钥和本地数据绝不能打进镜像
+**/.env
+**/.env.*
+!**/.env.example
+backend/data/
+backend/.venv/
+backend/evals/
+backend/tests/
+**/__pycache__/
+**/*.pyc
+**/node_modules/
+frontend/dist/
+desktop/
+docs/
+deploy/
+.git/
+.github/
+*.md

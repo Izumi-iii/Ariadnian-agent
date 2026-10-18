@@ -347,18 +347,33 @@ def _probe(fn: Callable[[], list[PaperIn]]) -> list[PaperIn]:
         _no_retry.reset(token)
 
 
-def download_pdf(url: str, dest: Path) -> Path:
+def download_pdf(url: str, dest: Path, max_bytes: int | None = None) -> Path:
+    """下载 PDF。链接来自文献元数据（用户可编辑），所以每一跳（含重定向）都检查不能指向内网 / 本机。"""
+    from .security import check_public_url, max_upload_bytes
+
+    limit = max_bytes or max_upload_bytes()
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with httpx.stream("GET", url, headers=_UA, timeout=60, follow_redirects=True) as r:
-        r.raise_for_status()
-        ctype = r.headers.get("content-type", "")
-        with open(dest, "wb") as f:
-            for chunk in r.iter_bytes():
-                f.write(chunk)
-    with open(dest, "rb") as f:
-        if f.read(5) != b"%PDF-":
-            dest.unlink(missing_ok=True)
-            raise ValueError(f"下载的不是 PDF（content-type: {ctype}）")
+    check_public_url(url)
+    hooks = {"request": [lambda req: check_public_url(str(req.url))]}
+    tmp = dest.with_suffix(".part")
+    try:
+        with httpx.Client(transport=_TRANSPORT, timeout=60, follow_redirects=True, event_hooks=hooks) as client:
+            with client.stream("GET", url, headers=_UA) as r:
+                r.raise_for_status()
+                ctype = r.headers.get("content-type", "")
+                size = 0
+                with open(tmp, "wb") as f:
+                    for chunk in r.iter_bytes():
+                        size += len(chunk)
+                        if size > limit:
+                            raise ValueError(f"PDF 超过 {limit // (1024 * 1024)} MB 上限")
+                        f.write(chunk)
+        with open(tmp, "rb") as f:
+            if f.read(5) != b"%PDF-":
+                raise ValueError(f"下载的不是 PDF（content-type: {ctype}）")
+        tmp.replace(dest)
+    finally:
+        tmp.unlink(missing_ok=True)
     return dest
 
 

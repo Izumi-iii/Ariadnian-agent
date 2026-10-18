@@ -664,11 +664,17 @@ export function SettingsDialog() {
 
           {/* 底部 */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 3.5, py: 1.5, borderTop: `1px solid ${brand.lineSoft}` }}>
-            <Typography noWrap title={view?.settings_file} sx={{ fontSize: 11.5, color: brand.faint, flex: 1, minWidth: 0 }}>
-              保存在本机 {view?.settings_file ?? 'settings.json'}，优先于 .env，保存后立即生效
-            </Typography>
+            {view?.locked ? (
+              <Typography noWrap sx={{ fontSize: 11.5, color: brand.faint, flex: 1, minWidth: 0 }}>
+                管理员已锁定设置：这里只能查看，修改请联系部署者
+              </Typography>
+            ) : (
+              <Typography noWrap title={view?.settings_file} sx={{ fontSize: 11.5, color: brand.faint, flex: 1, minWidth: 0 }}>
+                保存在本机 {view?.settings_file ?? 'settings.json'}，优先于 .env，保存后立即生效
+              </Typography>
+            )}
             <Button onClick={closeSettings}>{dirty ? '放弃修改' : '关闭'}</Button>
-            <Button variant="contained" onClick={save} disabled={!dirty || saving} startIcon={saving ? <CircularProgress size={14} color="inherit" /> : undefined}>
+            <Button variant="contained" onClick={save} disabled={!dirty || saving || !!view?.locked} startIcon={saving ? <CircularProgress size={14} color="inherit" /> : undefined}>
               保存
             </Button>
           </Box>
