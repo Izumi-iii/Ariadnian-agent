@@ -156,7 +156,21 @@ docker compose up -d --build                         # 从源码构建并启动�
 ARIA_BIND=127.0.0.1 docker compose --profile https up -d --build   # 加一个 Caddy，自动申请并续期证书；8000 端口只对本机开放
 ```
 
-不想在服务器上构建，也可以直接用 CI 发布的镜像：`docker compose pull && docker compose up -d`（镜像在 `ghcr.io/tkzzzzzz6/ariadnian-agent`，打过版本标签后才有 `latest`；ghcr.io 上新发布的镜像默认私有，要在 GitHub 的 Packages 页面把它改为 Public 才能匿名拉取）。国内服务器构建慢，可以换源：`docker compose build --build-arg NPM_REGISTRY=https://registry.npmmirror.com --build-arg PYPI_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple`。
+不想在服务器上构建，也可以直接用 CI 发布的镜像：`docker compose pull && docker compose up -d`（镜像在 `ghcr.io/tkzzzzzz6/ariadnian-agent`，打过版本标签后才有 `latest`；ghcr.io 上新发布的镜像默认私有，要在 GitHub 的 Packages 页面把它改为 Public 才能匿名拉取）。国内网络连不上 Docker Hub 时见下面的「国内网络」。
+
+**国内网络**：构建要从 Docker Hub 拉 `node`、`python` 基础镜像，再装 npm 和 PyPI 依赖，国内经常超时（典型报错是 `failed to fetch anonymous token ... auth.docker.io`）。在仓库根目录新建 `.env`（已被 git 忽略），写入镜像源后照常 `docker compose up -d --build`：
+
+```bash
+# 基础镜像走镜像站（下面以 DaoCloud 为例，也可以换成其他可用的镜像站）
+NODE_IMAGE=m.daocloud.io/docker.io/library/node:22-slim
+PYTHON_IMAGE=m.daocloud.io/docker.io/library/python:3.12-slim
+CADDY_IMAGE=m.daocloud.io/docker.io/library/caddy:2
+# npm / PyPI 依赖走国内源
+NPM_REGISTRY=https://registry.npmmirror.com
+PYPI_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+也可以在 Docker Desktop → Settings → Docker Engine 里配置 `registry-mirrors`，对所有镜像生效。公共镜像站的可用性会变化，拉取失败时换一个试试。
 
 **部署给别人用时的安全设置**（都在 `deploy/ariadne.env` 里，本地和桌面版默认不开启，行为不变）：
 

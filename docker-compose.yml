@@ -13,7 +13,14 @@ name: ariadne
 services:
   ariadne:
     image: ${ARIADNE_IMAGE:-ghcr.io/tkzzzzzz6/ariadnian-agent:latest}
-    build: .
+    build:
+      context: .
+      # 国内网络连不上 Docker Hub 时，在仓库根目录的 .env 里设置这些变量（见 README「国内网络」）
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-slim}
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        PYPI_INDEX: ${PYPI_INDEX:-https://pypi.org/simple}
     restart: unless-stopped
     env_file: deploy/ariadne.env
     ports:
@@ -26,7 +33,7 @@ services:
     cpus: 2
 
   caddy:
-    image: caddy:2
+    image: ${CADDY_IMAGE:-caddy:2}
     profiles: [https]
     restart: unless-stopped
     env_file: deploy/ariadne.env
