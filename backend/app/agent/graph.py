@@ -21,6 +21,7 @@ from langgraph.types import interrupt
 from .. import llm, scholar
 from ..config import get_settings
 from ..ingest import index_abstract, index_pdf
+from ..pdfview import fetch_into_library
 from ..library import PaperIn, add_paper, get_paper
 from ..assist import retrieval_query
 from ..retrieval import search
@@ -102,6 +103,7 @@ def select_papers(state: ReviewState) -> dict:
             "message": "请勾选要纳入文献库并用于综述的论文",
             "candidates": state.get("candidates", []),
             "max_papers": state.get("max_papers", 8),
+            "topic": state.get("topic", ""),  # 前端预览 PDF 时用它找相关段落
         }
     )
     chosen = set((answer or {}).get("selected") or [])
@@ -121,7 +123,7 @@ def ingest(state: ReviewState) -> dict:
         index_abstract(paper.id, paper.title, paper.abstract)
         if state.get("fetch_pdf") and paper.pdf_url and not paper.has_fulltext and not s.llm_fake:
             try:
-                path = scholar.download_pdf(paper.pdf_url, s.data_dir / "pdfs" / f"{paper.id}.pdf")
+                path = fetch_into_library(paper.id, paper.pdf_url)
                 n = index_pdf(paper.id, path)
                 _progress(f"  全文已解析：{n} 个片段")
             except Exception as e:  # noqa: BLE001

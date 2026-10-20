@@ -1,6 +1,8 @@
 import { mergeAttributes, Node } from '@tiptap/core'
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react'
 import Tooltip from '@mui/material/Tooltip'
+import Box from '@mui/material/Box'
+import { useApp } from '../../lib/appContext'
 import { citeStore, formatInline, useCiteState } from '../../lib/citations'
 
 declare module '@tiptap/core' {
@@ -12,20 +14,55 @@ declare module '@tiptap/core' {
   }
 }
 
-function CitationView({ node, selected }: ReactNodeViewProps) {
+/** 引用所在的那句话（从句首到引用之后的句末），用来在原文里找依据 */
+function sentenceAround(props: ReactNodeViewProps): string {
+  const pos = typeof props.getPos === 'function' ? props.getPos() : undefined
+  if (pos == null) return ''
+  const doc = props.editor.state.doc
+  const $pos = doc.resolve(pos)
+  const before = doc.textBetween($pos.start(), pos, ' ', ' ')
+  const after = doc.textBetween(Math.min(pos + props.node.nodeSize, $pos.end()), $pos.end(), ' ', ' ')
+  const head = before.split(/(?<=[。！？!?；;]|\.\s)/).pop() ?? before
+  const tail = after.match(/^[^。！？!?；;]*/)?.[0] ?? ''
+  return (head + tail).trim()
+}
+
+function CitationView(props: ReactNodeViewProps) {
+  const { node, selected } = props
   const st = useCiteState()
+  const { openReader } = useApp()
   const ids: string[] = node.attrs.ids ?? []
   const missing = ids.some((id) => !st.papers[id])
   const label = formatInline(ids, st)
-  const tip = ids
-    .map((id) => {
-      const p = st.papers[id]
-      return p ? `${p.title}（${p.authors?.[0] ?? '佚名'}${p.authors?.length > 1 ? ' 等' : ''}, ${p.year ?? 'n.d.'}）` : '⚠ 文献库中已不存在这篇文献'
-    })
-    .join('\n')
+  const tip = (
+    <Box sx={{ py: 0.25 }}>
+      {ids.map((id) => {
+        const p = st.papers[id]
+        if (!p) return <div key={id}>⚠ 文献库中已不存在这篇文献</div>
+        const readable = p.has_pdf || !!p.pdf_url
+        return (
+          <Box key={id} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.25 }}>
+            <span style={{ flex: 1 }}>
+              {p.title}（{p.authors?.[0] ?? '佚名'}
+              {p.authors?.length > 1 ? ' 等' : ''}, {p.year ?? 'n.d.'}）
+            </span>
+            {readable && (
+              <Box
+                component="button"
+                onClick={() => openReader({ paperId: id, claim: sentenceAround(props) })}
+                sx={{ all: 'unset', cursor: 'pointer', color: '#9fd0ff', whiteSpace: 'nowrap', fontSize: 12, '&:hover': { textDecoration: 'underline' } }}
+              >
+                看原文 →
+              </Box>
+            )}
+          </Box>
+        )
+      })}
+    </Box>
+  )
   return (
     <NodeViewWrapper as="span" className={`cite-chip${selected ? ' is-selected' : ''}${missing ? ' is-missing' : ''}`}>
-      <Tooltip title={<span style={{ whiteSpace: 'pre-line' }}>{tip}</span>} placement="top">
+      <Tooltip title={tip} placement="top">
         <span contentEditable={false}>{label}</span>
       </Tooltip>
     </NodeViewWrapper>

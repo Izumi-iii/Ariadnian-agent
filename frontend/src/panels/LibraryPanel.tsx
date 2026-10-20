@@ -15,6 +15,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import AddIcon from '@mui/icons-material/Add'
 import CheckIcon from '@mui/icons-material/Check'
+import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import { api } from '../lib/api'
 import { useApp } from '../lib/appContext'
 import { normalizeTitle } from '../lib/util'
@@ -27,7 +28,7 @@ function meta(p: PaperIn) {
 }
 
 function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { papers, refreshPapers, notify } = useApp()
+  const { papers, refreshPapers, notify, openPreview } = useApp()
   const [q, setQ] = useState('')
   const [sources, setSources] = useState({ semantic_scholar: true, arxiv: true, openalex: false })
   useEffect(() => {
@@ -131,12 +132,25 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
                     </Typography>
                   )}
                 </Box>
-                <Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, alignItems: 'stretch' }}>
                   {have ? (
                     <Chip size="small" icon={<CheckIcon />} label="已在库中" />
                   ) : (
                     <Button variant="outlined" startIcon={adding === p.title ? <CircularProgress size={12} /> : <AddIcon />} onClick={() => add(p)} disabled={!!adding}>
                       加入
+                    </Button>
+                  )}
+                  {p.pdf_url && (
+                    <Button
+                      startIcon={<PictureAsPdfOutlinedIcon />}
+                      onClick={() =>
+                        openPreview({
+                          paper: p,
+                          actions: have ? [] : [{ label: '加入文献库', primary: true, onClick: () => add(p) }],
+                        })
+                      }
+                    >
+                      预览
                     </Button>
                   )}
                 </Box>
@@ -158,7 +172,7 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
 }
 
 function PaperItem({ p }: { p: Paper }) {
-  const { editor, refreshPapers, notify } = useApp()
+  const { editor, refreshPapers, notify, openReader } = useApp()
   const [open, setOpen] = useState(false)
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [busy, setBusy] = useState(false)
@@ -195,6 +209,7 @@ function PaperItem({ p }: { p: Paper }) {
                 }}
               >
                 {p.has_fulltext ? `全文 · ${p.chunk_count} 段` : '仅摘要'}
+                {p.has_pdf ? ' · PDF' : ''}
               </Box>
               <Typography sx={{ fontFamily: 'Roboto Mono', fontSize: 10.5, color: brand.faint }}>{p.bibkey}</Typography>
               {busy && <CircularProgress size={10} />}
@@ -208,6 +223,13 @@ function PaperItem({ p }: { p: Paper }) {
                 </IconButton>
               </span>
             </Tooltip>
+            {(p.has_pdf || p.pdf_url) && (
+              <Tooltip title={p.has_pdf ? '阅读原文' : '下载并阅读原文'}>
+                <IconButton aria-label="阅读原文" onClick={() => openReader({ paperId: p.id })}>
+                  <PictureAsPdfOutlinedIcon sx={{ fontSize: 16, color: brand.blue }} />
+                </IconButton>
+              </Tooltip>
+            )}
             <IconButton onClick={(e) => setAnchor(e.currentTarget)} aria-label="更多">
               <MoreVertIcon sx={{ fontSize: 16 }} />
             </IconButton>

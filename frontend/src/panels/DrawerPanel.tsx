@@ -8,19 +8,20 @@ import { AskPanel } from './AskPanel'
 import { CitePanel } from './CitePanel'
 import { DocsPanel } from './DocsPanel'
 import { LibraryPanel } from './LibraryPanel'
+import { ReaderPanel } from './ReaderPanel'
 
-const VIEWS: RightTab[] = ['agent', 'cite', 'ask', 'library', 'docs']
+const VIEWS: RightTab[] = ['agent', 'cite', 'ask', 'library', 'reader', 'docs']
 
-/** 右侧抽屉：综述 Agent / 找引用 / 文献问答 / 文献库 / 我的论文。平时收起，Ctrl+J 切换 */
+/** 右侧抽屉：综述 Agent / 找引用 / 文献问答 / 文献库 / 原文 / 我的论文。平时收起，Ctrl+J 切换 */
 export function DrawerPanel() {
-  const { rightTab, setRightTab, setDrawerOpen } = useApp()
+  const { rightTab, setRightTab, setDrawerOpen, reader } = useApp()
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#fcfcfc', borderLeft: `1px solid ${brand.lineSoft}` }}>
       <Box sx={{ px: 2, pt: 1.5, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
         {rightTab === 'docs' ? (
           <Typography sx={{ fontSize: 14, fontWeight: 500, flex: 1 }}>我的论文</Typography>
         ) : (
-          <Box sx={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          <Box sx={{ flex: 1, minWidth: 0, overflowX: 'auto', scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' } }}>
             <PillToggle<RightTab>
               value={rightTab}
               onChange={setRightTab}
@@ -29,6 +30,8 @@ export function DrawerPanel() {
                 ['cite', '找引用'],
                 ['ask', '文献问答'],
                 ['library', '文献库'],
+                // 打开过原文才出现，平时不占位置
+                ...(reader || rightTab === 'reader' ? ([['reader', '原文']] as [RightTab, string][]) : []),
               ]}
             />
           </Box>
@@ -49,6 +52,8 @@ export function DrawerPanel() {
             <AskPanel />
           ) : t === 'library' ? (
             <LibraryPanel />
+          ) : t === 'reader' ? (
+            <ReaderPanel />
           ) : (
             <DocsPanel />
           )}

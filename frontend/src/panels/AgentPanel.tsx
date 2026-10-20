@@ -18,6 +18,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { api, streamSSE } from '../lib/api'
 import { useApp } from '../lib/appContext'
 import { contentFromText } from '../lib/editorText'
+import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import type { OutlineSection, PaperIn } from '../lib/types'
 import { Card, Composer, Thread, ThreadItem } from '../components/Thread'
 import { brand } from '../theme'
@@ -88,6 +89,7 @@ function MiniSelect<T extends string | number>({ value, options, onChange, label
 
 // ------------------------------------------------------------------ 勾选文献
 function SelectPapersCard({ value, onSubmit }: { value: any; onSubmit: (v: any) => void }) {
+  const { openPreview } = useApp()
   const cands: Candidate[] = value.candidates ?? []
   const [sel, setSel] = useState<number[]>(() => cands.slice(0, value.max_papers ?? 8).map((c) => c.cid))
   const [open, setOpen] = useState<number | null>(null)
@@ -119,6 +121,29 @@ function SelectPapersCard({ value, onSubmit }: { value: any; onSubmit: (v: any) 
               <Collapse in={open === c.cid}>
                 <Typography sx={{ mt: 0.5, fontSize: 12, lineHeight: 1.6, color: brand.ink }}>{c.abstract || '（无摘要）'}</Typography>
               </Collapse>
+              {c.pdf_url && (
+                <Box
+                  component="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const picked = sel.includes(c.cid)
+                    openPreview({
+                      paper: c,
+                      claim: value.topic ?? '',
+                      actions: [
+                        {
+                          label: picked ? '不纳入这篇' : '勾选这篇',
+                          primary: !picked,
+                          onClick: () => setSel(picked ? sel.filter((x) => x !== c.cid) : [...sel, c.cid]),
+                        },
+                      ],
+                    })
+                  }}
+                  sx={{ all: 'unset', cursor: 'pointer', mt: 0.5, display: 'inline-flex', alignItems: 'center', gap: 0.5, fontSize: 11.5, color: brand.blue, '&:hover': { textDecoration: 'underline' } }}
+                >
+                  <PictureAsPdfOutlinedIcon sx={{ fontSize: 14 }} /> 预览 PDF
+                </Box>
+              )}
             </Box>
           </Box>
         ))}

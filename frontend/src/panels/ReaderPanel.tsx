@@ -1,0 +1,268 @@
+/**
+ * 抽屉「原文」：在写作界面旁边读文献库里的论文 PDF。
+ * 从页边批注、找引用或文献库打开时，会跳到依据所在的页，并高亮与正文那句话最相关的原文。
+ */
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { Box, Button, CircularProgress, IconButton, Tooltip, Typography } from '@mui/material'
+import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore'
+import NavigateNextIcon from '@mui/icons-material/NavigateNext'
+import FormatQuoteIcon from '@mui/icons-material/FormatQuote'
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined'
+import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
+import { api, pdfFileUrl } from '../lib/api'
+import { useApp, type Evidence } from '../lib/appContext'
+import { authorYearLabel, citeStore, formatInline } from '../lib/citations'
+import type { Paper, PdfHighlight } from '../lib/types'
+// pdf.js 体积较大，用到时才加载
+const PdfViewer = lazy(() => import('../pdf/PdfViewer').then((m) => ({ default: m.PdfViewer })))
+import { Card } from '../components/Thread'
+import { brand } from '../theme'
+import { VerdictChip } from './CitePanel'
+
+export function ReaderPanel() {
+  const { reader, papers, refreshPapers, editor, notify, openReader } = useApp()
+  const paper: Paper | undefined = useMemo(() => papers.find((p) => p.id === reader?.paperId), [papers, reader?.paperId])
+  const given: Evidence[] = reader?.evidences?.filter((e) => e.snippet || e.page) ?? []
+  // 只给了那句话、没有依据（比如从正文里的引用打开）：在原文里找最相关的几段当作依据
+  const [auto, setAuto] = useState<Evidence[] | null>(null)
+  const evidences = given.length ? given : auto ?? []
+  const [idx, setIdx] = useState(0)
+  const [hl, setHl] = useState<PdfHighlight | null>(null)
+  const [locating, setLocating] = useState(false)
+  const [fetching, setFetching] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const ev = evidences[idx]
+
+  useEffect(() => {
+    setIdx(0)
+    setHl(null)
+    setAuto(null)
+    setFetchError(null)
+  }, [reader?.nonce])
+
+  useEffect(() => {
+    if (!paper?.has_pdf || given.length || !reader?.claim) return
+    let cancelled = false
+    api
+      .pdfPassages({ paper_id: paper.id }, reader.claim, 3)
+      .then((r) => !cancelled && setAuto(r.passages.map((p) => ({ page: p.page, snippet: p.text, section: p.section }))))
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [reader?.nonce, paper?.id, paper?.has_pdf]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 没有本地 PDF 但有开放链接：自动下载并解析全文（之后检索和核查也能用上全文）
+  useEffect(() => {
+    if (!paper || paper.has_pdf || !paper.pdf_url || fetching || fetchError) return
+    setFetching(true)
+    api
+      .fetchFulltext(paper.id)
+      .then(() => refreshPapers())
+      .catch((e: Error) => setFetchError(e.message))
+      .finally(() => setFetching(false))
+  }, [paper?.id, paper?.has_pdf]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 定位依据句
+  useEffect(() => {
+    if (!paper?.has_pdf || !ev?.snippet) {
+      setHl(ev?.page ? { page: ev.page, rects: [] } : null)
+      return
+    }
+    let cancelled = false
+    setLocating(true)
+    api
+      .pdfLocate({ paper_id: paper.id }, ev.snippet, ev.page, reader?.claim ?? '')
+      .then((r) => !cancelled && setHl(r))
+      .catch(() => !cancelled && setHl(ev.page ? { page: ev.page, rects: [] } : null))
+      .finally(() => !cancelled && setLocating(false))
+    return () => {
+      cancelled = true
+    }
+  }, [paper?.id, paper?.has_pdf, ev?.snippet, ev?.page, reader?.claim, reader?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!reader || !paper) return <ReaderEmpty papers={papers} onOpen={(id) => openReader({ paperId: id })} />
+
+  const insertCite = () => {
+    if (!editor) return
+    let pos = reader.insertAt ?? editor.state.selection.to
+    pos = Math.min(pos, editor.state.doc.content.size)
+    const prev = editor.state.doc.textBetween(Math.max(0, pos - 1), pos)
+    if (reader.insertAt == null && /[。．.!?！？]/.test(prev)) pos -= 1
+    editor.chain().focus().insertContentAt(pos, { type: 'citation', attrs: { ids: [paper.id] } }).run()
+    notify(`已插入引用 ${formatInline([paper.id], citeStore.get())}`, 'success')
+  }
+
+  const upload = async (f: File) => {
+    try {
+      await api.uploadPaper(f, paper.id)
+      await refreshPapers()
+      setFetchError(null)
+      notify('已上传原文', 'success')
+    } catch (e: any) {
+      notify(e.message, 'error')
+    }
+  }
+
+  return (
+    <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      {/* 论文信息 + 这处引用的判断 */}
+      <Box sx={{ px: 2, pb: 1.25 }}>
+        <Card sx={{ cursor: 'default', bgcolor: brand.subtle }}>
+          <Typography sx={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.4 }}>{paper.title}</Typography>
+          <Typography noWrap sx={{ fontSize: 11.5, color: brand.muted, mt: 0.25 }}>
+            {authorYearLabel(paper)}
+            {paper.venue ? ` · ${paper.venue}` : ''}
+            {paper.has_fulltext ? ` · 全文 ${paper.chunk_count} 段` : ' · 仅摘要'}
+          </Typography>
+          {ev && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.75 }}>
+              {ev.verdict && <VerdictChip v={ev.verdict} />}
+              <Typography noWrap sx={{ fontSize: 11.5, color: brand.muted, flex: 1, minWidth: 0 }}>
+                {given.length ? '依据' : '最相关的原文'}：{hl?.page ?? ev.page ? `第 ${hl?.page ?? ev.page} 页` : '页码未知'}
+                {ev.section ? ` · ${ev.section}` : ''}
+                {locating ? ' · 定位中…' : hl && hl.found === false && ev.snippet ? ' · 没能精确定位，已跳到所在页' : ''}
+              </Typography>
+              {evidences.length > 1 && (
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <IconButton aria-label="上一处依据" onClick={() => setIdx((idx - 1 + evidences.length) % evidences.length)} sx={{ p: 0.25 }}>
+                    <NavigateBeforeIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                  <Typography sx={{ fontSize: 11.5, color: brand.blue }}>
+                    {idx + 1} / {evidences.length}
+                  </Typography>
+                  <IconButton aria-label="下一处依据" onClick={() => setIdx((idx + 1) % evidences.length)} sx={{ p: 0.25 }}>
+                    <NavigateNextIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Box>
+              )}
+            </Box>
+          )}
+          {ev?.reason && <Typography sx={{ fontSize: 11.5, color: brand.muted, mt: 0.25 }}>{ev.reason}</Typography>}
+        </Card>
+      </Box>
+
+      {/* 原文 */}
+      {paper.has_pdf ? (
+        <Suspense fallback={<Box sx={{ flex: 1, bgcolor: '#ececec' }} />}>
+        <PdfViewer
+          src={pdfFileUrl({ paper_id: paper.id })}
+          page={ev?.page ?? null}
+          highlight={hl}
+          jumpKey={`${reader.nonce}-${idx}`}
+          onError={(m) => notify(m, 'error')}
+        />
+        </Suspense>
+      ) : (
+        <Box sx={{ flex: 1, overflow: 'auto', px: 2, borderTop: `1px solid ${brand.lineSoft}`, pt: 2 }}>
+          {fetching ? (
+            <Typography sx={{ fontSize: 13, color: brand.muted, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CircularProgress size={14} /> 正在下载并解析全文…
+            </Typography>
+          ) : (
+            <>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: brand.muted, mb: 1 }}>
+                <PictureAsPdfOutlinedIcon fontSize="small" />
+                <Typography sx={{ fontSize: 13 }}>
+                  {fetchError ? `没能下载原文：${fetchError}` : '这篇文献没有开放获取的 PDF。'}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                <Button variant="outlined" startIcon={<UploadFileOutlinedIcon />} onClick={() => fileRef.current?.click()}>
+                  上传 PDF
+                </Button>
+                {paper.url && (
+                  <Button component="a" href={paper.url} target="_blank" rel="noreferrer">
+                    出版商页面 ↗
+                  </Button>
+                )}
+              </Box>
+              {ev?.snippet && (
+                <>
+                  <Typography sx={{ fontSize: 12, color: brand.faint, mb: 0.5 }}>依据片段</Typography>
+                  <Typography sx={{ fontSize: 12.5, lineHeight: 1.7, pl: 1, borderLeft: `3px solid #f5b400`, mb: 2 }}>{ev.snippet}</Typography>
+                </>
+              )}
+              <Typography sx={{ fontSize: 12, color: brand.faint, mb: 0.5 }}>摘要</Typography>
+              <Typography sx={{ fontSize: 12.5, lineHeight: 1.7 }}>{paper.abstract || '（无摘要）'}</Typography>
+            </>
+          )}
+          <input ref={fileRef} type="file" accept=".pdf" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0]).then(() => (e.target.value = ''))} />
+        </Box>
+      )}
+
+      {/* 底部操作 */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1.25, borderTop: `1px solid ${brand.line}`, bgcolor: '#fff' }}>
+        <Button variant="contained" startIcon={<FormatQuoteIcon />} disabled={!editor} onClick={insertCite}>
+          插入引用 {formatInline([paper.id], citeStore.get())}
+        </Button>
+        {evidences.length > 1 && (
+          <Button variant="outlined" onClick={() => setIdx((idx + 1) % evidences.length)}>
+            换一处依据
+          </Button>
+        )}
+        <Box sx={{ flex: 1 }} />
+        {reader.insertAt != null && (
+          <Typography sx={{ fontSize: 11.5, color: brand.faint }}>插入到批注对应的句子</Typography>
+        )}
+      </Box>
+    </Box>
+  )
+}
+
+function ReaderEmpty({ papers, onOpen }: { papers: Paper[]; onOpen: (id: string) => void }) {
+  const withPdf = papers.filter((p) => p.has_pdf)
+  return (
+    <Box sx={{ flex: 1, overflow: 'auto', px: 2, pt: 1 }}>
+      <Typography sx={{ fontSize: 13, color: brand.muted, lineHeight: 1.7, mb: 2 }}>
+        在页边批注上点「看原文」、在找引用结果或文献库里点「阅读原文」，这里会打开那篇论文，并跳到依据所在的位置。
+      </Typography>
+      {withPdf.length > 0 && (
+        <>
+          <Typography sx={{ fontSize: 12, color: brand.faint, mb: 0.75 }}>有原文的文献（{withPdf.length}）</Typography>
+          {withPdf.map((p) => (
+            <Card key={p.id} onClick={() => onOpen(p.id)} sx={{ mb: 0.75, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <PictureAsPdfOutlinedIcon sx={{ fontSize: 18, color: brand.red }} />
+              <Box sx={{ minWidth: 0 }}>
+                <Typography noWrap sx={{ fontSize: 12.5, fontWeight: 500 }}>
+                  {p.title}
+                </Typography>
+                <Typography noWrap sx={{ fontSize: 11.5, color: brand.muted }}>
+                  {authorYearLabel(p)}
+                </Typography>
+              </Box>
+            </Card>
+          ))}
+        </>
+      )}
+    </Box>
+  )
+}
+
+/** 打开「原文」的小按钮，用在页边批注、找引用结果等处 */
+export function ReadSourceButton({
+  paperId, page, onClick, label,
+}: {
+  paperId: string | null | undefined
+  page?: number | null
+  onClick: () => void
+  label?: string
+}) {
+  if (!paperId) return null
+  return (
+    <Tooltip title="在侧栏打开原文，跳到依据所在位置">
+      <Button
+        size="small"
+        onClick={(e) => {
+          e.stopPropagation()
+          onClick()
+        }}
+        startIcon={<PictureAsPdfOutlinedIcon sx={{ fontSize: '14px !important' }} />}
+        sx={{ py: 0, px: 0.75, minHeight: 22, fontSize: 11.5, color: brand.blue, bgcolor: 'rgba(0,120,212,0.07)', '&:hover': { bgcolor: 'rgba(0,120,212,0.13)' } }}
+      >
+        {label ?? (page ? `看原文 p.${page}` : '看原文')}
+      </Button>
+    </Tooltip>
+  )
+}

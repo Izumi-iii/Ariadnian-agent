@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Allotment } from 'allotment'
+import { useEffect, useRef, useState } from 'react'
+import { Allotment, type AllotmentHandle } from 'allotment'
 import 'allotment/dist/style.css'
 import {
   Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem,
@@ -32,6 +32,7 @@ import { createDoc, relTime, useBootstrapDoc, useDocList } from './lib/docs'
 import { citedIds, download, toLatex, toMarkdown } from './lib/export'
 import type { CiteStyle } from './lib/types'
 import { DrawerPanel } from './panels/DrawerPanel'
+import { PdfPreviewDialog } from './pdf/PdfPreviewDialog'
 import { brand } from './theme'
 
 // ------------------------------------------------------------------ 顶栏
@@ -230,7 +231,7 @@ const RAIL: [RightTab, string, typeof StorageOutlinedIcon][] = [
 
 function Rail() {
   const { drawerOpen, rightTab, toggleDrawer, setDocId, bumpDocs } = useApp()
-  const group = (t: RightTab) => (t === 'agent' || t === 'cite' || t === 'ask' ? 'agent' : t)
+  const group = (t: RightTab) => (t === 'agent' || t === 'cite' || t === 'ask' ? 'agent' : t === 'reader' ? 'library' : t)
   return (
     <Box sx={{ width: 52, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.75, pt: 1.5, borderRight: `1px solid ${brand.lineSoft}` }}>
       <Tooltip title="新建论文" placement="right">
@@ -269,8 +270,21 @@ function Rail() {
 
 // ------------------------------------------------------------------ 主布局：图标栏 | 正文（目录 + 页边批注）| 助手抽屉
 export default function App() {
-  const { docId, drawerOpen, setDrawerOpen } = useApp()
+  const { docId, drawerOpen, setDrawerOpen, reader, rightTab } = useApp()
   useBootstrapDoc()
+  const splitRef = useRef<AllotmentHandle>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  // 打开「原文」时把抽屉拉宽一些，PDF 才看得清；正文尽量留够 1000px，页边批注才不会被挤掉
+  useEffect(() => {
+    if (!reader || rightTab !== 'reader') return
+    const t = window.setTimeout(() => {
+      const total = wrapRef.current?.clientWidth ?? 0
+      const drawer = Math.max(420, Math.min(620, total - 1000))
+      if (total && total - drawer >= 560) splitRef.current?.resize([total - drawer, drawer])
+    }, 30)
+    return () => window.clearTimeout(t)
+  }, [reader?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -287,16 +301,17 @@ export default function App() {
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: '#fff' }}>
       <TopBar />
       <SettingsDialog />
+      <PdfPreviewDialog />
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <Rail />
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Allotment proportionalLayout={false} separator={false}>
+        <Box ref={wrapRef} sx={{ flex: 1, minWidth: 0 }}>
+          <Allotment ref={splitRef} proportionalLayout={false} separator={false}>
             <Allotment.Pane minSize={560}>
               <Box sx={{ height: '100%', p: 1.5, pr: drawerOpen ? 0.75 : 1.5, pt: 0.5, boxSizing: 'border-box' }}>
                 {docId ? <PaperEditor key={docId} docId={docId} /> : <Box sx={{ p: 4, color: 'text.secondary' }}>正在加载…</Box>}
               </Box>
             </Allotment.Pane>
-            <Allotment.Pane preferredSize={400} minSize={320} maxSize={640} visible={drawerOpen}>
+            <Allotment.Pane preferredSize={400} minSize={320} maxSize={760} visible={drawerOpen}>
               <DrawerPanel />
             </Allotment.Pane>
           </Allotment>

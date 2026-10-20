@@ -3,15 +3,50 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { Alert, Snackbar } from '@mui/material'
 import { api } from './api'
 import { citeStore } from './citations'
-import type { Health, Paper } from './types'
+import type { Health, Paper, PaperIn } from './types'
 
 /** 右侧抽屉里的视图 */
-export type RightTab = 'agent' | 'cite' | 'ask' | 'library' | 'docs'
+export type RightTab = 'agent' | 'cite' | 'ask' | 'library' | 'reader' | 'docs'
 
 export interface CiteRequest {
   sentence: string
   insertAt: number
   nonce: number
+}
+
+/** 一处引用依据：页码 + 原文片段，在「原文」里高亮 */
+export interface Evidence {
+  page?: number | null
+  snippet?: string
+  section?: string | null
+  verdict?: string
+  reason?: string
+}
+
+/** 在抽屉「原文」里打开一篇文献库论文 */
+export interface ReaderTarget {
+  paperId: string
+  /** 正文里的那句话：用来从依据片段里挑出最相关的句子高亮 */
+  claim?: string
+  evidences?: Evidence[]
+  /** 插入引用的位置（来自页边批注）；没有就插到光标处 */
+  insertAt?: number | null
+  nonce: number
+}
+
+export interface PreviewAction {
+  label: string
+  primary?: boolean
+  onClick: () => void | Promise<void>
+}
+
+/** 检索预览弹窗：可以是文献库论文（有 id），也可以是还没入库的检索结果 */
+export interface PreviewTarget {
+  paper: PaperIn & { id?: string; has_pdf?: boolean }
+  claim?: string
+  verdict?: string
+  reason?: string
+  actions?: PreviewAction[]
 }
 
 interface AppCtx {
@@ -44,6 +79,11 @@ interface AppCtx {
   openSettings: (tab?: SettingsTab) => void
   closeSettings: () => void
   refreshHealth: () => Promise<void>
+  reader: ReaderTarget | null
+  openReader: (t: Omit<ReaderTarget, 'nonce'>) => void
+  preview: PreviewTarget | null
+  openPreview: (t: PreviewTarget) => void
+  closePreview: () => void
 }
 
 export type SettingsTab = 'model' | 'search' | 'embedding' | 'usage'
@@ -104,6 +144,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const [reader, setReader] = useState<ReaderTarget | null>(null)
+  const openReader = useCallback((t: Omit<ReaderTarget, 'nonce'>) => {
+    setReader({ ...t, nonce: Date.now() })
+    setRightTab('reader')
+    setDrawerOpen(true)
+  }, [])
+  const [preview, setPreview] = useState<PreviewTarget | null>(null)
+  const openPreview = useCallback((t: PreviewTarget) => setPreview(t), [])
+  const closePreview = useCallback(() => setPreview(null), [])
+
   const notify = useCallback<AppCtx['notify']>((msg, severity = 'info') => setToast({ msg, severity }), [])
 
   const refreshPapers = useCallback(async () => {
@@ -157,11 +207,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       editor, setEditor, papers, refreshPapers, docId, setDocId, docTitle, setDocTitle,
       rightTab, setRightTab, citeRequest, requestCitations, notify, health,
       drawerOpen, setDrawerOpen, toggleDrawer, copilot, setCopilot, review, setReview, docsVersion, bumpDocs,
-      settingsTab, openSettings, closeSettings, refreshHealth,
+      settingsTab, openSettings, closeSettings, refreshHealth, reader, openReader, preview, openPreview, closePreview,
     }),
     [editor, papers, refreshPapers, docId, docTitle, rightTab, citeRequest, requestCitations, notify, health,
       drawerOpen, toggleDrawer, copilot, setCopilot, review, setReview, docsVersion, bumpDocs,
-      settingsTab, openSettings, closeSettings, refreshHealth],
+      settingsTab, openSettings, closeSettings, refreshHealth, reader, openReader, preview, openPreview, closePreview],
   )
 
   return (

@@ -29,6 +29,7 @@ Ariadne 是一个帮你**快速走进一个陌生研究领域**的研究报告�
 | **插入引用** | 正文输入 `@` 搜索文献库；或文献库条目上的 ❞ 按钮 | 引用是独立的 citation 节点，绑定文献库 id |
 | **为一句话找引用** | 选中文字，在浮动菜单里点「找引用」 | 混合检索 + LLM 判断「支持 / 部分支持 / 不相关」，并给出原文片段 |
 | **页边批注** | 默认开启（顶栏 ✎ 图标切换）；写完一段、光标离开后自动检查 | 逐段调用 `/api/assist/annotate`：核查已有引用、找出缺引用的论断并给出候选文献、至多一条精简建议；结果按段落内容缓存，正文用波浪线/虚线标出，卡片与句子对齐 |
+| **原文阅读** | 页边批注、找引用结果、正文引用的悬浮提示、文献库条目上点「看原文」；检索结果和 Agent 候选文献上点「预览 PDF」 | pdf.js 渲染（文本层可选中复制）；后端用 PyMuPDF 在原文里定位依据句（整句找不到就按 6 词一段分段匹配），返回归一化坐标，前端跳到对应页并高亮；未入库的论文只临时缓存预览，加入文献库时直接复用 |
 | **整篇引用核查** | 助手抽屉「找引用」→ 核查全文引用 | 逐条检查被引文献原文能否支撑那句话，能找出凭空挂上的引用 |
 | **参考文献自动生成** | 无需操作 | 顺序编码（GB/T 7714 简化）/ 作者-年份（APA）一键切换 |
 | **文献库** | 在线检索 Semantic Scholar / arXiv / OpenAlex、上传 PDF、下载开放获取全文 | PyMuPDF 解析，按章节切块（记录章节和页码），遇到参考文献就停止 |
@@ -62,6 +63,15 @@ Ariadne 是一个帮你**快速走进一个陌生研究领域**的研究报告�
 <tr>
 <td><b>找引用</b>：为一句论断检索文献，给出「支持 / 部分支持」判断和原文片段<br/><img src="docs/screenshots/find-citations.png" alt="找引用"/></td>
 <td><b>设置</b>：在网页里选模型服务商、填 API Key、测试连接，无需改 .env<br/><img src="docs/screenshots/settings.png" alt="设置"/></td>
+</tr>
+</table>
+
+**原文阅读**：点页边批注上的「看原文」，右侧抽屉打开被引论文的 PDF，跳到依据所在页，并把与正文那句话最相关的原文标黄；在找引用结果、Agent 候选文献上点「预览 PDF」，可以先在弹窗里看原文和最相关的几段，再决定是否引用。（截图中的 PDF 为本地生成的演示文件）
+
+<table>
+<tr>
+<td width="50%"><b>抽屉阅读</b>：从页边批注跳到原文依据<br/><img src="docs/screenshots/reader.png" alt="原文阅读：抽屉里打开 PDF 并高亮依据句"/></td>
+<td width="50%"><b>检索预览</b>：先看原文再决定引不引用<br/><img src="docs/screenshots/pdf-preview.png" alt="检索预览：在线看 PDF 和最相关的原文段落"/></td>
 </tr>
 </table>
 
@@ -113,7 +123,7 @@ npm run dev       # 开发：后端 :8000 + 前端 :5173 一起启动，热更�
 | `npm run dev` | 开发模式，前后端同时启动 |
 | `npm run demo` | 同上，但设置 `LLM_FAKE=1`：不调用模型、不需要 API key，适合演示和调界面 |
 | `npm start` | 生产模式：前端有改动才重新构建，由后端单端口提供服务 http://localhost:8000 |
-| `npm test` | 后端测试（42 个，离线）+ 前端类型检查 |
+| `npm test` | 后端测试（50 个，离线）+ 前端类型检查 |
 | `npm run eval` | 测评引用判断、假引用检出、检索、缺引用检测和续写延迟，见下文「测评」 |
 | `npm run desktop` | 打包 Electron 桌面版（见下文「桌面版」）；加 `-- --dev` 则不打包、直接用桌面窗口运行 |
 
@@ -265,12 +275,13 @@ backend/
   app/
     main.py            FastAPI 入口
     security.py        部署用的安全设置：访问密码、设置锁定、上传上限、PDF 下载地址检查
+    pdfview.py         原文阅读：提供 PDF、在原文中定位依据句（返回高亮坐标）、找出与论断最相关的段落、预览缓存
     routers/settings.py  网页设置：读取 / 保存（settings.json 覆盖 .env）、测试模型连接与检索来源
     config.py          .env 配置（兼容旧版字段）
     llm.py             LiteLLM 接入层：四档模型、JSON 模式、备用模型、调用统计、LLM_FAKE
     db.py              SQLite 表结构
     library.py         文献元数据、去重、bibkey、BibTeX
-    ingest.py          PDF 解析与按章节切块
+    ingest.py          PDF 解析（双栏按先左后右的阅读顺序）与按章节切块
     retrieval.py       BM25 + 向量 RRF 混合检索
     embeddings.py      可选嵌入（Ollama / OpenAI）
     scholar.py         Semantic Scholar / arXiv / OpenAlex 检索：限速、429 重试、自动补位、结果缓存；PDF 下载
@@ -289,8 +300,9 @@ docs/                架构图（gen_architecture.py 生成）、界面截图、
 frontend/
   src/
     editor/            TipTap 编辑器与扩展（引用节点、@ 引用、灰色续写、选区改写、页边批注、悬浮目录）
-    panels/            右侧抽屉：综述 Agent / 找引用 / 文献问答 / 文献库 / 我的论文
+    panels/            右侧抽屉：综述 Agent / 找引用 / 文献问答 / 文献库 / 原文 / 我的论文
     components/        时间线卡片、输入框、设置页（模型 / 文献检索 / 向量检索 / 用量）
+    pdf/               PDF 阅读器（pdf.js，按需渲染 + 文本层 + 高亮）、检索预览弹窗
     lib/               API、引用格式化、导出、页边批注的段落缓存与定位
 ```
 
@@ -303,3 +315,4 @@ frontend/
 - [ ] GROBID / MinerU 解析，提升双栏排版和中文 PDF 的解析质量
 - [ ] docx 导出（pandoc）、图表与公式节点
 - [ ] 网页版多人账号：每人独立的文献库和论文，按人统计用量
+- [ ] 原文阅读进阶：在 PDF 上划线引用、记笔记；分屏对照模式（布局草图见 `docs/layouts/layout-F-分屏对照.svg`）

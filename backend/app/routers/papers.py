@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import PlainTextResponse
 
-from .. import scholar
+from .. import pdfview, scholar
 from ..config import get_settings
 from ..db import get_conn
 from ..ingest import chunk_plain_text, guess_pdf_metadata, index_abstract, index_pdf, store_chunks
@@ -117,7 +117,7 @@ def papers_fetch_fulltext(pid: str):
     if not paper.pdf_url:
         raise HTTPException(400, "这篇文献没有开放获取的 PDF 链接，可以手动上传")
     try:
-        path = scholar.download_pdf(paper.pdf_url, get_settings().data_dir / "pdfs" / f"{pid}.pdf")
+        path = pdfview.fetch_into_library(pid, paper.pdf_url)
         n = index_pdf(pid, path)
     except UnsafeURL as e:
         raise HTTPException(400, str(e)) from e

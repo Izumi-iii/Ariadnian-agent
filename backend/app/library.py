@@ -30,6 +30,7 @@ class Paper(PaperIn):
     id: str
     bibkey: str
     has_fulltext: bool = False
+    has_pdf: bool = False  # data/pdfs 里有原文 PDF，可以在「原文」里阅读
     chunk_count: int = 0
     created_at: str | None = None
 
@@ -69,6 +70,9 @@ def _row_to_paper(row: Any, chunk_count: int = 0) -> Paper:
     d["authors"] = json.loads(d.get("authors") or "[]")
     d["has_fulltext"] = bool(d.get("has_fulltext"))
     d["chunk_count"] = d.pop("chunk_count", chunk_count) or 0
+    from .pdfview import library_pdf
+
+    d["has_pdf"] = library_pdf(d["id"]) is not None
     return Paper(**d)
 
 
@@ -153,6 +157,12 @@ def update_paper(pid: str, fields: dict[str, Any]) -> Paper | None:
 def delete_paper(pid: str) -> bool:
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM papers WHERE id=?", (pid,))
+    if cur.rowcount > 0:
+        from .pdfview import library_pdf
+
+        pdf = library_pdf(pid)
+        if pdf:
+            pdf.unlink(missing_ok=True)
     return cur.rowcount > 0
 
 

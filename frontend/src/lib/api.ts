@@ -1,4 +1,6 @@
-import type { CiteCandidate, DocFull, DocMeta, Health, Paper, PaperIn, SettingsView, TestResult, UsageStats } from './types'
+import type {
+  CiteCandidate, DocFull, DocMeta, Health, Paper, PaperIn, PdfHighlight, PdfPassage, PdfSource, SettingsView, TestResult, UsageStats,
+} from './types'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -89,6 +91,12 @@ export const api = {
   chunks: (id: string) => req<{ id: number; section: string; page: number; text: string }[]>(`/api/papers/${id}/chunks`),
   bibtex: (ids?: string[]) => req<string>(`/api/papers/bibtex${ids ? `?ids=${ids.join(',')}` : ''}`),
 
+  // 原文 PDF
+  pdfLocate: (src: PdfSource, text: string, page?: number | null, claim = '') =>
+    req<PdfHighlight & { pages: number }>('/api/pdf/locate', { method: 'POST', body: JSON.stringify({ ...src, text, page, claim }) }),
+  pdfPassages: (src: PdfSource, claim: string, k = 3) =>
+    req<{ passages: PdfPassage[] }>('/api/pdf/passages', { method: 'POST', body: JSON.stringify({ ...src, claim, k }) }),
+
   // 文档
   docs: () => req<DocMeta[]>('/api/documents'),
   createDoc: (title?: string, content?: any) =>
@@ -120,4 +128,10 @@ export const api = {
       `/api/agent${docId ? `?doc_id=${docId}` : ''}`,
     ),
   agentState: (tid: string) => req<{ thread_id: string; status: string; interrupt: any; result: any }>(`/api/agent/${tid}`),
+}
+
+/** 原文 PDF 的地址：文献库论文 / 临时预览 */
+export function pdfFileUrl(src: PdfSource): string {
+  if (src.paper_id) return `/api/pdf/file?paper_id=${encodeURIComponent(src.paper_id)}`
+  return `/api/pdf/file?url=${encodeURIComponent(src.url ?? '')}`
 }

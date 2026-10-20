@@ -13,10 +13,12 @@ export interface Paper {
   source?: string | null
   citation_count?: number | null
   has_fulltext?: boolean
+  /** 本地有原文 PDF，可以在「原文」里阅读 */
+  has_pdf?: boolean
   chunk_count?: number
 }
 
-export type PaperIn = Omit<Paper, 'id' | 'bibkey' | 'has_fulltext' | 'chunk_count'>
+export type PaperIn = Omit<Paper, 'id' | 'bibkey' | 'has_fulltext' | 'has_pdf' | 'chunk_count'>
 
 export interface DocMeta {
   id: string
@@ -130,4 +132,25 @@ export interface TestResult {
   error?: string
   hint?: string
   authenticated?: boolean
+}
+
+/** PDF 来源：文献库论文用 paper_id，还没入库的论文用 url（临时预览） */
+export interface PdfSource {
+  paper_id?: string | null
+  url?: string | null
+}
+
+export interface PdfHighlight {
+  page: number
+  /** 归一化矩形 [x0, y0, x1, y1]（0~1，相对页面宽高） */
+  rects: number[][]
+  quote?: string
+  found?: boolean
+}
+
+export interface PdfPassage {
+  page: number
+  section?: string | null
+  text: string
+  score: number
 }

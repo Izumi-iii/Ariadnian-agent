@@ -1,6 +1,7 @@
 import type { Editor } from '@tiptap/core'
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
-import { Box, Button, Typography } from '@mui/material'
+import { Box, Button, IconButton, Tooltip, Typography } from '@mui/material'
+import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh'
 import FormatQuoteIcon from '@mui/icons-material/FormatQuote'
 import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined'
@@ -8,6 +9,7 @@ import { useApp } from '../lib/appContext'
 import { authorYearLabel, citeStore } from '../lib/citations'
 import type { PlacedAnnotation } from '../lib/review'
 import { VerdictChip } from '../panels/CitePanel'
+import { ReadSourceButton } from '../panels/ReaderPanel'
 import { brand, card, shadow } from '../theme'
 import { DiffView } from './DiffView'
 
@@ -34,7 +36,7 @@ function NoteCard({
   onHover: (k: string | null) => void
   onDismiss: () => void
 }) {
-  const { requestCitations, notify } = useApp()
+  const { requestCitations, notify, openReader } = useApp()
   const papers = citeStore.get().papers
   const insertCite = (paperId: string) => {
     editor.chain().focus().insertContentAt(a.insertAt, { type: 'citation', attrs: { ids: [paperId] } }).run()
@@ -67,6 +69,20 @@ function NoteCard({
                 <Typography noWrap sx={{ fontSize: 12, flex: 1, minWidth: 0 }} title={c.title}>
                   {papers[c.paper_id] ? authorYearLabel(papers[c.paper_id]) : c.title}
                 </Typography>
+                <Tooltip title={c.page ? `看原文 p.${c.page}` : '看原文'}>
+                  <IconButton
+                    aria-label="看原文"
+                    onClick={() =>
+                      openReader({
+                        paperId: c.paper_id, claim: a.anchor, insertAt: a.insertAt,
+                        evidences: [{ page: c.page, snippet: c.snippet, verdict: c.verdict, reason: c.reason }],
+                      })
+                    }
+                    sx={{ p: 0.25, color: brand.blue }}
+                  >
+                    <PictureAsPdfOutlinedIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
                 <Button size="small" variant="contained" onClick={() => insertCite(c.paper_id)} sx={{ py: 0, minHeight: 22, fontSize: 11.5 }}>
                   插入
                 </Button>
@@ -102,6 +118,20 @@ function NoteCard({
                   </Typography>
                 </Box>
                 {i.reason && <Typography sx={{ fontSize: 11.5, color: brand.muted, mt: 0.25 }}>{i.reason}</Typography>}
+                {i.paper_id && (i.snippet || i.page) && (
+                  <Box sx={{ mt: 0.5 }}>
+                    <ReadSourceButton
+                      paperId={i.paper_id}
+                      page={i.page}
+                      onClick={() =>
+                        openReader({
+                          paperId: i.paper_id!, claim: a.anchor,
+                          evidences: [{ page: i.page, snippet: i.snippet, verdict: i.verdict, reason: i.reason }],
+                        })
+                      }
+                    />
+                  </Box>
+                )}
               </Box>
             ))}
           <Actions>

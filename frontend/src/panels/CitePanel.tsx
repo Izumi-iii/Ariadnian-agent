@@ -4,6 +4,8 @@ import PersonOutlineIcon from '@mui/icons-material/PersonOutline'
 import FormatQuoteIcon from '@mui/icons-material/FormatQuote'
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined'
 import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined'
+import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
+import { ReadSourceButton } from './ReaderPanel'
 import { api } from '../lib/api'
 import { useApp } from '../lib/appContext'
 import { citeStore, formatInline } from '../lib/citations'
@@ -31,10 +33,12 @@ interface CheckRow {
   paperId: string
   verdict: string
   reason: string
+  snippet?: string
+  page?: number | null
 }
 
 export function CitePanel() {
-  const { citeRequest, editor, notify } = useApp()
+  const { citeRequest, editor, notify, openReader, openPreview } = useApp()
   const [input, setInput] = useState('')
   const [query, setQuery] = useState('')
   const [insertAt, setInsertAt] = useState<number | null>(null)
@@ -87,7 +91,8 @@ export function CitePanel() {
     for (const c of ctxs) {
       try {
         const r = await api.verify(c.sentence, c.ids)
-        for (const x of r.results) rows.push({ pos: c.pos, sentence: c.sentence, paperId: x.paper_id, verdict: x.verdict, reason: x.reason })
+        for (const x of r.results)
+          rows.push({ pos: c.pos, sentence: c.sentence, paperId: x.paper_id, verdict: x.verdict, reason: x.reason, snippet: x.snippet, page: x.page })
         setChecks([...rows])
       } catch (e: any) {
         notify(e.message, 'error')
@@ -129,6 +134,17 @@ export function CitePanel() {
                   </Box>
                   <Typography sx={{ fontSize: 12, mt: 0.5 }}>“{c.sentence.slice(0, 120)}”</Typography>
                   <Typography sx={{ fontSize: 11.5, color: brand.muted }}>{c.reason}</Typography>
+                  {(c.snippet || c.page) && (
+                    <Box sx={{ mt: 0.5 }}>
+                      <ReadSourceButton
+                        paperId={c.paperId}
+                        page={c.page}
+                        onClick={() =>
+                          openReader({ paperId: c.paperId, claim: c.sentence, evidences: [{ page: c.page, snippet: c.snippet, verdict: c.verdict, reason: c.reason }] })
+                        }
+                      />
+                    </Box>
+                  )}
                 </Card>
               ))}
           </Box>
@@ -172,6 +188,43 @@ export function CitePanel() {
                       </Box>
                       {c.snippet}
                     </Typography>
+                    {(c.paper.has_pdf || c.paper.pdf_url) && (
+                      <Box sx={{ display: 'flex', gap: 0.75, mt: 0.75 }}>
+                        <Button
+                          size="small"
+                          startIcon={<PictureAsPdfOutlinedIcon sx={{ fontSize: '14px !important' }} />}
+                          sx={{ py: 0, px: 1, minHeight: 24, fontSize: 12, bgcolor: 'rgba(0,120,212,0.07)', '&:hover': { bgcolor: 'rgba(0,120,212,0.13)' } }}
+                          onClick={() =>
+                            openPreview({
+                              paper: c.paper, claim: query, verdict: c.verdict, reason: c.reason,
+                              actions: [
+                                {
+                                  label: '在侧栏阅读',
+                                  onClick: () =>
+                                    openReader({
+                                      paperId: c.paper.id, claim: query, insertAt,
+                                      evidences: [{ page: c.page, snippet: c.snippet, section: c.section, verdict: c.verdict, reason: c.reason }],
+                                    }),
+                                },
+                                ...(editor
+                                  ? [{
+                                      label: `插入引用 ${formatInline([c.paper.id], citeStore.get())}`, primary: true,
+                                      onClick: () => {
+                                        let pos = Math.min(insertAt ?? editor.state.selection.to, editor.state.doc.content.size)
+                                        if (/[。．.!?！？]/.test(editor.state.doc.textBetween(Math.max(0, pos - 1), pos))) pos -= 1
+                                        editor.chain().focus().insertContentAt(pos, { type: 'citation', attrs: { ids: [c.paper.id] } }).run()
+                                        notify('已插入引用', 'success')
+                                      },
+                                    }]
+                                  : []),
+                              ],
+                            })
+                          }
+                        >
+                          预览 PDF
+                        </Button>
+                      </Box>
+                    )}
                   </Box>
                 </Card>
               </ThreadItem>

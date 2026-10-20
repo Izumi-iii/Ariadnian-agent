@@ -1,6 +1,6 @@
 """论文全文解析与切块。
 
-- PyMuPDF 按页抽取文本（比 pypdf 对双栏排版更稳）；
+- PyMuPDF 按文本块抽取，双栏论文先读左栏再读右栏；
 - 识别章节标题，切块时记录 section / page，检索结果可以精确到出处；
 - 遇到 References / 参考文献 就停止，避免参考文献列表污染检索；
 - 切块循环保证一定前进（修复了旧版 chunk_text 的死循环）。
@@ -41,11 +41,42 @@ def _clean(text: str) -> str:
     return text
 
 
+def _page_text(page) -> str:
+    """按阅读顺序取一页的文字，处理双栏排版。
+
+    get_text(sort=True) 只按纵坐标排序，双栏论文会把左右两栏同一高度的行交错拼在一起。
+    这里按文本块处理：跨栏的块（标题、通栏图表说明）按原位置放；它们之间的部分先读完左栏再读右栏。
+    """
+    width = page.rect.width
+    blocks = [b for b in page.get_text("blocks") if b[6] == 0 and b[4].strip()]
+    blocks.sort(key=lambda b: (b[1], b[0]))
+    out: list[str] = []
+    left: list[tuple] = []
+    right: list[tuple] = []
+
+    def flush() -> None:
+        for col in (left, right):
+            out.extend(b[4] for b in sorted(col, key=lambda b: (b[1], b[0])))
+            col.clear()
+
+    for b in blocks:
+        x0, _, x1 = b[0], b[1], b[2]
+        if x1 - x0 > width * 0.6:  # 通栏
+            flush()
+            out.append(b[4])
+        elif (x0 + x1) / 2 < width / 2:
+            left.append(b)
+        else:
+            right.append(b)
+    flush()
+    return "\n\n".join(t.strip("\n") for t in out)  # 一个文本块大致是一段，空行分隔
+
+
 def extract_pdf_pages(path: str | Path) -> list[str]:
     import fitz  # PyMuPDF
 
     with fitz.open(str(path)) as doc:
-        return [_clean(page.get_text("text", sort=True)) for page in doc]
+        return [_clean(_page_text(page)) for page in doc]
 
 
 def split_paragraphs(pages: list[str]) -> list[tuple[str, str | None, int]]:
