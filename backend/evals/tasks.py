@@ -327,7 +327,7 @@ def llm_usage() -> dict[str, Any]:
 
 
 def iter_tasks(names: Iterable[str]) -> list[str]:
-    allowed = ["judge", "fake_cite", "retrieval", "missing", "latency"]
+    allowed = ["judge", "fake_cite", "retrieval", "missing", "locate", "latency"]
     names = list(names)
     bad = [n for n in names if n not in allowed]
     if bad:

@@ -259,24 +259,41 @@ def ask_stream(question: str, k: int = 6) -> tuple[list[dict], Iterator[str]]:
 # ---------------------------------------------------------------------------
 # 页边批注：对一个段落做引用核查、缺引用检测和精简建议
 # ---------------------------------------------------------------------------
-CITE_TOKEN = re.compile(r"\[((?:@[\w:.-]+(?:\s*;\s*)?)+)\]")
+# 引用标记（pandoc 语法）：[@key]、[@a; @b]，可带页码 [@key, p. 3]
+_CITE_ITEM = r"@[\w:.-]+(?:,\s*[^;\[\]@]{1,30})?"
+CITE_TOKEN = re.compile(r"\[((?:" + _CITE_ITEM + r"(?:\s*;\s*)?)+)\]")
+
+
+def cite_keys(token_body: str) -> list[str]:
+    """[@a, p. 3; @b] 里的 bibkey：['a', 'b']（去掉页码等定位信息）"""
+    return [k.split(",")[0].strip().lstrip("@") for k in token_body.split(";") if k.strip()]
 # 英文分号不作为句子边界：[@a; @b] 这样的引用标记里也有分号
 _SENT_SPLIT = re.compile(r"(?<=[。！？!?；])|(?<=[.])\s+")
 _WORDY = re.compile(r"非常|在很大程度上|一定程度上|总的来说|众所周知|\bvery\b|\ba lot of\b|\bin order to\b", re.I)
 
 
 def split_sentences(paragraph: str) -> list[str]:
-    parts = [p for p in _SENT_SPLIT.split(paragraph) if p and p.strip()]
+    # 引用标记里可能有 "p. 3" 这样的句点，先换成占位符再分句，避免在引用中间断开
+    tokens: list[str] = []
+
+    def hide(m: re.Match) -> str:
+        tokens.append(m.group(0))
+        return f"\x00{len(tokens) - 1}\x00"
+
+    def show(t: str) -> str:
+        return re.sub(r"\x00(\d+)\x00", lambda m: tokens[int(m.group(1))], t)
+
+    parts = [p for p in _SENT_SPLIT.split(CITE_TOKEN.sub(hide, paragraph)) if p and p.strip()]
     out: list[str] = []
     for p in parts:
         # "……结论。[@key]" —— 句末标点之后的引用属于前一句
-        m = re.match(r"^\s*((?:\[(?:@[\w:.-]+(?:\s*;\s*)?)+\]\s*)+)(.*)$", p, re.S)
+        m = re.match(r"^\s*((?:\x00\d+\x00\s*)+)(.*)$", p, re.S)
         if m and out:
             out[-1] += m.group(1).rstrip()
             p = m.group(2)
         if p.strip():
             out.append(p)
-    return out
+    return [show(p) for p in out]
 
 
 def strip_cites(text: str) -> str:
@@ -336,7 +353,7 @@ def annotate(paragraph: str, title: str = "", check_citations: bool = True, revi
     # 1) 已有引用 → 核查原文是否支撑
     if check_citations:
         for s in sents:
-            keys = [k.strip().lstrip("@") for m in CITE_TOKEN.finditer(s) for k in m.group(1).split(";")]
+            keys = [k for m in CITE_TOKEN.finditer(s) for k in cite_keys(m.group(1))]
             if not keys:
                 continue
             anchor = strip_cites(s).strip()

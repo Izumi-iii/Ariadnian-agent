@@ -1,4 +1,4 @@
-"""SQLite 存储：文献元数据、全文切块、论文文档。单文件、零运维，适合本地使用。"""
+"""SQLite 存储：文献元数据、全文切块、PDF 笔记、论文文档。单文件、零运维，适合本地使用。"""
 from __future__ import annotations
 
 import sqlite3
@@ -65,6 +65,18 @@ CREATE TABLE IF NOT EXISTS search_cache (
     results     TEXT NOT NULL,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS notes (
+    id          TEXT PRIMARY KEY,
+    paper_id    TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+    page        INTEGER NOT NULL,
+    quote       TEXT NOT NULL,
+    comment     TEXT NOT NULL DEFAULT '',
+    rects       TEXT NOT NULL DEFAULT '[]',
+    color       TEXT NOT NULL DEFAULT 'yellow',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_notes_paper ON notes(paper_id, page);
 CREATE TABLE IF NOT EXISTS agent_threads (
     thread_id   TEXT PRIMARY KEY,
     doc_id      TEXT,

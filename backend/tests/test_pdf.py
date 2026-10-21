@@ -149,3 +149,47 @@ def test_two_column_reading_order(tmp_path):
     li = next(i for i, t in enumerate(paras) if t.startswith("Left"))
     ri = next(i for i, t in enumerate(paras) if t.startswith("Right"))
     assert li < ri
+
+
+def test_pick_quote_extends_to_neighbouring_evidence():
+    text = ("The weather was mild during the study period. Retrieval augments the generator with documents from an index. "
+            "The retrieved documents are treated as latent variables and marginalized. Our funding came from a public grant.")
+    q = pdfview.pick_quote(text, "retrieved documents are latent variables that the generator marginalizes over")
+    assert "latent variables" in q and "weather" not in q and "funding" not in q
+
+
+def test_hard_split_keeps_sentence_spacing():
+    from app.ingest import chunk_plain_text
+
+    text = " ".join(f"Sentence number {i} talks about retrieval." for i in range(200))
+    chunks = chunk_plain_text(text, max_chars=500, overlap_chars=0)
+    assert all(".Sentence" not in c.text for c in chunks)
+
+
+def test_notes_crud_and_cascade(paper_id):
+    r = client.post("/api/notes", json={"paper_id": paper_id, "page": 2, "quote": "we treat  the retrieved\\ndocument z as a latent variable",
+                                        "comment": "核心思想", "rects": [[0.1, 0.2, 0.5, 0.22]], "color": "green"})
+    assert r.status_code == 200, r.text
+    note = r.json()
+    assert note["quote"].startswith("we treat the retrieved") and note["rects"] == [[0.1, 0.2, 0.5, 0.22]] and note["color"] == "green"
+    assert client.post("/api/notes", json={"paper_id": paper_id, "page": 1, "quote": "x", "rects": [[0, 0, 2, 1]]}).status_code == 422
+    assert client.post("/api/notes", json={"paper_id": "nope", "page": 1, "quote": "x"}).status_code == 404
+    r = client.patch(f"/api/notes/{note['id']}", json={"comment": "改一下"})
+    assert r.json()["comment"] == "改一下"
+    assert [n["id"] for n in client.get(f"/api/notes?paper_id={paper_id}").json()] == [note["id"]]
+    assert client.delete(f"/api/notes/{note['id']}").status_code == 200
+    assert client.get(f"/api/notes?paper_id={paper_id}").json() == []
+    # 删除文献时笔记一起删掉
+    other = client.post("/api/papers", json={"title": "Temp paper for notes"}).json()["paper"]
+    client.post("/api/notes", json={"paper_id": other["id"], "page": 1, "quote": "temp"})
+    client.delete(f"/api/papers/{other['id']}")
+    assert all(n["paper_id"] != other["id"] for n in client.get("/api/notes").json())
+
+
+def test_citation_locator_parsing():
+    from app.assist import CITE_TOKEN, cite_keys, split_sentences, strip_cites
+
+    t = "检索增强生成减少事实错误[@lewis2020retrieval, p. 3]。生成时做边缘化。[@a; @b, pp. 4–5] Next sentence."
+    assert [cite_keys(m.group(1)) for m in CITE_TOKEN.finditer(t)] == [["lewis2020retrieval"], ["a", "b"]]
+    assert split_sentences(t) == ["检索增强生成减少事实错误[@lewis2020retrieval, p. 3]。", "生成时做边缘化。[@a; @b, pp. 4–5]", "Next sentence."]
+    assert "[@" not in strip_cites(t)

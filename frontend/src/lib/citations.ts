@@ -86,12 +86,51 @@ export function authorYearLabel(p: Paper | undefined): string {
   return zh ? `${lastName(a[0])}等, ${year}` : `${lastName(a[0])} et al., ${year}`
 }
 
-export function formatInline(ids: string[], st: CiteState): string {
+/** 引用的页码定位：{ 文献 id: "3" | "4–5" } */
+export type CitePages = Record<string, string>
+
+/** "3" → "p. 3"，"4–5" → "pp. 4–5" */
+export function pageLabel(v: string): string {
+  return /[-–,]/.test(v) ? `pp. ${v}` : `p. ${v}`
+}
+
+export function formatInline(ids: string[], st: CiteState, pages?: CitePages): string {
+  const withPages = !!pages && ids.some((id) => pages[id])
   if (st.style === 'numeric') {
+    if (withPages) {
+      const items = ids
+        .map((id) => ({ n: st.order.indexOf(id) + 1, p: pages![id] }))
+        .sort((a, b) => a.n - b.n)
+        .map((x) => `${x.n > 0 ? x.n : '?'}${x.p ? `, ${pageLabel(x.p)}` : ''}`)
+      return `[${items.join('; ')}]`
+    }
     const nums = ids.map((id) => st.order.indexOf(id) + 1).filter((n) => n > 0)
     return nums.length ? `[${compressNumbers(nums)}]` : '[?]'
   }
-  return `(${ids.map((id) => authorYearLabel(st.papers[id])).join('; ')})`
+  return `(${ids.map((id) => authorYearLabel(st.papers[id]) + (pages?.[id] ? `, ${pageLabel(pages[id])}` : '')).join('; ')})`
+}
+
+// ------------------------------------------------------------------ 纯文本表示（pandoc 语法）：[@key]、[@a; @b]、[@key, p. 3]
+/** 一个引用标记，可带页码定位 */
+export const CITE_RE = /\[((?:@[\w:.-]+(?:,\s*[^;\[\]@]{1,30})?(?:\s*;\s*)?)+)\]/g
+
+export function citeToken(ids: string[], pages?: CitePages): string {
+  const papers = state.papers
+  return `[${ids.map((id) => '@' + (papers[id]?.bibkey ?? id) + (pages?.[id] ? `, ${pageLabel(pages[id])}` : '')).join('; ')}]`
+}
+
+/** 解析 [@a, p. 3; @b] 的内部："a" → { key, page } */
+export function parseCiteBody(body: string): { key: string; page?: string }[] {
+  return body
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const [k, ...rest] = part.split(',')
+      const loc = rest.join(',').trim()
+      const page = loc ? loc.replace(/^pp?\.\s*/i, '').replace(/^第\s*|\s*页$/g, '').trim() : ''
+      return { key: k.trim().replace(/^@/, ''), page: page || undefined }
+    })
 }
 
 /** 参考文献条目。numeric 采用简化的 GB/T 7714，author-year 采用 APA 风格 */

@@ -20,7 +20,7 @@ from .db import init_db
 from .embeddings import embeddings_enabled
 from .llm import stats, tier_info
 from .security import PasswordMiddleware, check_startup
-from .routers import agent, assist, documents, papers, pdf, settings as settings_router
+from .routers import agent, assist, documents, notes, papers, pdf, settings as settings_router
 
 check_startup()
 # Windows 注册表可能把 .js / .mjs 映射成 text/plain，浏览器会拒绝执行（PDF 阅读器的 worker 是 .mjs）
@@ -42,6 +42,7 @@ app.add_middleware(PasswordMiddleware)
 
 app.include_router(papers.router)
 app.include_router(pdf.router)
+app.include_router(notes.router)
 app.include_router(documents.router)
 app.include_router(assist.router)
 app.include_router(agent.router)

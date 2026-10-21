@@ -29,6 +29,23 @@ interface Size {
   h: number
 }
 
+/** 一条划线 / 笔记在页面上的位置 */
+export interface PdfMark {
+  id: string
+  page: number
+  rects: number[][]
+  /** 填充色（rgba） */
+  fill: string
+}
+
+/** 用户在原文上选中的文字 */
+export interface PdfSelection {
+  page: number
+  /** 归一化矩形（同一行的合并成一个） */
+  rects: number[][]
+  text: string
+}
+
 export interface PdfViewerProps {
   src: string
   /** 打开后跳到这一页（从 1 开始） */
@@ -38,11 +55,21 @@ export interface PdfViewerProps {
   jumpKey?: number | string
   /** 工具栏左侧的额外内容，比如「在线预览」标记 */
   badge?: ReactNode
+  /** 滚动到某页的某个位置（y 为 0~1）；key 变化时生效。用于从笔记列表跳转 */
+  focus?: { page: number; y?: number; key: string | number } | null
+  /** 划线 / 笔记 */
+  marks?: PdfMark[]
+  activeMark?: string | null
+  onMarkClick?: (id: string, at: { x: number; y: number }) => void
+  /** 选中文字后显示的浮动菜单 */
+  renderSelectionMenu?: (sel: PdfSelection, close: () => void) => ReactNode
   onError?: (msg: string) => void
   onLoaded?: (pages: number) => void
 }
 
-export function PdfViewer({ src, page, highlight, jumpKey, badge, onError, onLoaded }: PdfViewerProps) {
+export function PdfViewer({
+  src, page, highlight, jumpKey, badge, onError, onLoaded, focus, marks, activeMark, onMarkClick, renderSelectionMenu,
+}: PdfViewerProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const pageEls = useRef(new Map<number, HTMLDivElement>())
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null)
@@ -135,6 +162,74 @@ export function PdfViewer({ src, page, highlight, jumpKey, badge, onError, onLoa
     return () => window.clearTimeout(t)
   }, [doc, sizes.length, page, highlight, jumpKey, scrollToPage]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!doc || !sizes.length || !focus) return
+    const t = window.setTimeout(() => scrollToPage(Math.min(Math.max(1, focus.page), sizes.length), focus.y ?? 0), 60)
+    return () => window.clearTimeout(t)
+  }, [doc, sizes.length, focus?.key]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---------------------------------------------------------------- 选中文字 / 点击划线
+  const [sel, setSel] = useState<(PdfSelection & { x: number; y: number }) | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const closeSel = useCallback(() => {
+    setSel(null)
+    window.getSelection()?.removeAllRanges()
+  }, [])
+  useEffect(() => setSel(null), [src, scale]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onMouseUp = (e: React.MouseEvent) => {
+    if (menuRef.current?.contains(e.target as Node)) return
+    const box = scrollRef.current
+    if (!box) return
+    const s = window.getSelection()
+    const text = s?.toString().replace(/\s+/g, ' ').replace(/(\w)- (\w)/g, '$1$2').trim() ?? ''
+    const pageEl = (e.target as HTMLElement).closest?.('.aria-pdf-page') as HTMLElement | null
+    if (!s || s.isCollapsed || text.length < 2) {
+      setSel(null)
+      // 没有选中文字：看看是不是点在了某条划线上
+      if (pageEl && marks?.length && onMarkClick) {
+        const pr = pageEl.getBoundingClientRect()
+        const n = Number(pageEl.dataset.page)
+        const x = (e.clientX - pr.left) / pr.width
+        const y = (e.clientY - pr.top) / pr.height
+        const hit = marks.find((m) => m.page === n && m.rects.some((r) => x >= r[0] - 0.003 && x <= r[2] + 0.003 && y >= r[1] - 0.003 && y <= r[3] + 0.003))
+        if (hit) onMarkClick(hit.id, { x: e.clientX, y: e.clientY })
+      }
+      return
+    }
+    if (!renderSelectionMenu) return
+    const range = s.getRangeAt(0)
+    const startPage = ((range.startContainer as HTMLElement).parentElement ?? (range.startContainer as HTMLElement))?.closest?.('.aria-pdf-page') as HTMLElement | null
+    if (!startPage) return
+    const pr = startPage.getBoundingClientRect()
+    // 只取起始页上的矩形（跨页选择时其余部分不画线，但文字保留）
+    const raw = Array.from(range.getClientRects()).filter(
+      (r) => r.width > 1 && r.height > 1 && r.top >= pr.top - 2 && r.bottom <= pr.bottom + 2 && r.left >= pr.left - 2 && r.right <= pr.right + 2,
+    )
+    if (!raw.length) return
+    const lines: { top: number; bottom: number; left: number; right: number }[] = []
+    for (const r of raw.sort((a, b) => a.top - b.top || a.left - b.left)) {
+      const line = lines.find((l) => Math.abs(l.top - r.top) < r.height * 0.5)
+      if (line) {
+        line.left = Math.min(line.left, r.left)
+        line.right = Math.max(line.right, r.right)
+        line.bottom = Math.max(line.bottom, r.bottom)
+      } else lines.push({ top: r.top, bottom: r.bottom, left: r.left, right: r.right })
+    }
+    const rects = lines.map((l) => [
+      +((l.left - pr.left) / pr.width).toFixed(4), +((l.top - pr.top) / pr.height).toFixed(4),
+      +((l.right - pr.left) / pr.width).toFixed(4), +((l.bottom - pr.top) / pr.height).toFixed(4),
+    ])
+    const last = lines[lines.length - 1]
+    const br = box.getBoundingClientRect()
+    setSel({
+      page: Number(startPage.dataset.page), rects, text,
+      // 菜单约 400px 宽：尽量从选区左端开始，放不下就贴着可视区域右边
+      x: Math.max(box.scrollLeft + 8, Math.min(last.left - br.left + box.scrollLeft, box.scrollLeft + box.clientWidth - 410)),
+      y: last.bottom - br.top + box.scrollTop + 8,
+    })
+  }
+
   // 缩放时保持当前页在视野里
   const prevScale = useRef(scale)
   useLayoutEffect(() => {
@@ -211,7 +306,15 @@ export function PdfViewer({ src, page, highlight, jumpKey, badge, onError, onLoa
       </Box>
 
       {/* 页面 */}
-      <Box ref={scrollRef} onScroll={onScroll} sx={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative' }}>
+      <Box
+        ref={scrollRef}
+        onScroll={onScroll}
+        onMouseUp={onMouseUp}
+        onMouseDown={(e) => {
+          if (sel && !menuRef.current?.contains(e.target as Node)) setSel(null)
+        }}
+        sx={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative' }}
+      >
         {error ? (
           <Typography sx={{ p: 3, fontSize: 13, color: brand.muted }}>{error}</Typography>
         ) : !doc ? (
@@ -230,9 +333,16 @@ export function PdfViewer({ src, page, highlight, jumpKey, badge, onError, onLoa
                 root={scrollRef}
                 rects={highlight && highlight.page === i + 1 ? highlight.rects : null}
                 flashKey={jumpKey}
+                marks={marks?.filter((m) => m.page === i + 1)}
+                activeMark={activeMark}
                 register={(el) => (el ? pageEls.current.set(i + 1, el) : pageEls.current.delete(i + 1))}
               />
             ))}
+          </Box>
+        )}
+        {sel && renderSelectionMenu && (
+          <Box ref={menuRef} onMouseDown={(e) => !(e.target as HTMLElement).closest('input, textarea') && e.preventDefault()} sx={{ position: 'absolute', left: sel.x, top: sel.y, zIndex: 5 }}>
+            {renderSelectionMenu(sel, closeSel)}
           </Box>
         )}
       </Box>
@@ -242,8 +352,10 @@ export function PdfViewer({ src, page, highlight, jumpKey, badge, onError, onLoa
 
 // ------------------------------------------------------------------ 单页
 const PageView = memo(function PageView({
-  doc, num, size, scale, root, rects, flashKey, register,
+  doc, num, size, scale, root, rects, flashKey, register, marks, activeMark,
 }: {
+  marks?: PdfMark[]
+  activeMark?: string | null
   doc: PDFDocumentProxy
   num: number
   size: Size
@@ -321,6 +433,18 @@ const PageView = memo(function PageView({
         <Typography sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: brand.faint }}>
           第 {num} 页
         </Typography>
+      )}
+      {marks?.flatMap((m) =>
+        m.rects.map((r, i) => (
+          <Box
+            key={`${m.id}-${i}`}
+            sx={{
+              position: 'absolute', zIndex: 1, pointerEvents: 'none', borderRadius: '2px', bgcolor: m.fill, mixBlendMode: 'multiply',
+              left: `${r[0] * 100}%`, top: `${r[1] * 100}%`, width: `${(r[2] - r[0]) * 100}%`, height: `${(r[3] - r[1]) * 100}%`,
+              outline: activeMark === m.id ? '2px solid rgba(0,120,212,0.6)' : 'none', outlineOffset: 1,
+            }}
+          />
+        )),
       )}
       {rects?.map((r, i) => (
         <Box

@@ -97,6 +97,14 @@ export const api = {
   pdfPassages: (src: PdfSource, claim: string, k = 3) =>
     req<{ passages: PdfPassage[] }>('/api/pdf/passages', { method: 'POST', body: JSON.stringify({ ...src, claim, k }) }),
 
+  // PDF 笔记
+  notes: (paperId?: string) => req<import('./notes').Note[]>(`/api/notes${paperId ? `?paper_id=${encodeURIComponent(paperId)}` : ''}`),
+  createNote: (n: { paper_id: string; page: number; quote: string; comment?: string; rects: number[][]; color?: string }) =>
+    req<import('./notes').Note>('/api/notes', { method: 'POST', body: JSON.stringify(n) }),
+  updateNote: (id: string, fields: { comment?: string; color?: string }) =>
+    req<import('./notes').Note>(`/api/notes/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
+  deleteNote: (id: string) => req(`/api/notes/${id}`, { method: 'DELETE' }),
+
   // 文档
   docs: () => req<DocMeta[]>('/api/documents'),
   createDoc: (title?: string, content?: any) =>

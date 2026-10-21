@@ -158,7 +158,7 @@ def _hard_split(text: str, max_chars: int) -> list[str]:
         if len(buf) + len(s) > max_chars and buf:
             out.append(buf)
             buf = ""
-        buf += s
+        buf += (" " if buf and s else "") + s  # 切分时吃掉了句间空格，拼回去时补上（否则会变成 "facts.Purely"）
     if buf:
         out.append(buf)
     return out

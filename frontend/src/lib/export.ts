@@ -1,5 +1,5 @@
 import type { JSONContent } from '@tiptap/core'
-import { citeStore, collectCitationOrder } from './citations'
+import { citeStore, citeToken, collectCitationOrder, pageLabel } from './citations'
 
 function keysOf(ids: string[]): string[] {
   const papers = citeStore.get().papers
@@ -10,7 +10,7 @@ function keysOf(ids: string[]): string[] {
 function mdInline(nodes: JSONContent[] = []): string {
   return nodes
     .map((n) => {
-      if (n.type === 'citation') return `[${keysOf(n.attrs?.ids ?? []).map((k) => '@' + k).join('; ')}]`
+      if (n.type === 'citation') return citeToken((n.attrs?.ids ?? []).filter((id: string) => citeStore.get().papers[id]), n.attrs?.pages)
       if (n.type === 'hardBreak') return '  \n'
       let t = n.text ?? ''
       for (const m of n.marks ?? []) {
@@ -61,10 +61,20 @@ const TEX_ESC: Record<string, string> = {
 }
 const esc = (s: string) => s.replace(/[\\&%$#_{}~^]/g, (c) => TEX_ESC[c])
 
+/** \\cite{a,b}；带页码的文献单独写成 \\cite[p.~3]{a} */
+function texCite(ids: string[], pages?: Record<string, string>): string {
+  const papers = citeStore.get().papers
+  const plain = ids.filter((id) => papers[id] && !pages?.[id])
+  const located = ids.filter((id) => papers[id] && pages?.[id])
+  const parts = located.map((id) => `\\cite[${pageLabel(pages![id]).replace(' ', '~')}]{${papers[id].bibkey}}`)
+  if (plain.length) parts.unshift(`\\cite{${keysOf(plain).join(',')}}`)
+  return parts.join('')
+}
+
 function texInline(nodes: JSONContent[] = []): string {
   return nodes
     .map((n) => {
-      if (n.type === 'citation') return `\\cite{${keysOf(n.attrs?.ids ?? []).join(',')}}`
+      if (n.type === 'citation') return texCite(n.attrs?.ids ?? [], n.attrs?.pages)
       if (n.type === 'hardBreak') return '\\\\\n'
       let t = esc(n.text ?? '')
       for (const m of n.marks ?? []) {

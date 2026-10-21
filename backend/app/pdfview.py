@@ -86,10 +86,20 @@ def resolve(paper_id: str | None = None, url: str | None = None) -> Path:
 # ---------------------------------------------------------------------------
 # 论断 → 检索词（中文论断会扩展英文关键词；同一句话只算一次）
 # ---------------------------------------------------------------------------
+def _stem(t: str) -> str:
+    """粗略词干：英文长词只看前 6 个字母（infected / infection、regulates / regulation 视为同一个词）"""
+    return t[:6] if t.isascii() and len(t) > 6 else t
+
+
+def _terms_of(text: str) -> set[str]:
+    from .retrieval import tokenize
+
+    return {_stem(t) for t in tokenize(text)}
+
+
 @lru_cache(maxsize=256)
 def _claim_terms(claim: str) -> frozenset[str]:
     from .assist import retrieval_query
-    from .retrieval import tokenize
 
     if not claim.strip():
         return frozenset()
@@ -97,7 +107,7 @@ def _claim_terms(claim: str) -> frozenset[str]:
         q = retrieval_query(claim)
     except Exception:  # noqa: BLE001  扩展失败时只用原句
         q = claim
-    return frozenset(tokenize(q))
+    return frozenset(_terms_of(q))
 
 
 _SENT = re.compile(r"(?<=[.!?。！？])\s+")
@@ -107,24 +117,38 @@ def _sentences(text: str) -> list[str]:
     return [s.strip() for s in _SENT.split(re.sub(r"\s+", " ", text)) if len(s.strip()) > 1]
 
 
-def pick_quote(text: str, claim: str = "", max_chars: int = 320) -> str:
-    """从依据片段（通常是一整块）里挑出与论断最相关的一两句，用来高亮。"""
-    from .retrieval import tokenize
+def _weighted(terms: frozenset[str], units: list[set[str]]) -> list[float]:
+    """每个单元（句子 / 段落）与论断的相关度：重合词按稀有程度加权（在很多单元里都出现的词权重低）"""
+    import math
 
+    n = len(units)
+    df = {t: sum(1 for u in units if t in u) for t in terms}
+    return [sum(math.log(1 + n / df[t]) for t in terms if t in u) for u in units]
+
+
+def pick_quote(text: str, claim: str = "", max_chars: int = 420) -> str:
+    """从依据片段（通常是一整块）里挑出与论断最相关的句子用来高亮。
+
+    证据经常跨两三句：先找得分最高的句子，再把紧挨着、得分也不低（≥ 最高分一半）的句子并进来，最多 3 句。
+    """
     sents = _sentences(text)
     if not sents:
         return text.strip()[:max_chars]
     terms = _claim_terms(claim)
-    if terms:
-        scored = [(len(terms & set(tokenize(s))), -i, i) for i, s in enumerate(sents)]
-        best = max(scored)[2]
-    else:
-        best = 0
-    quote = sents[best]
+    scores = _weighted(terms, [_terms_of(s) for s in sents]) if terms else [0.0] * len(sents)
+    best = max(range(len(sents)), key=lambda i: (scores[i], -i))
+    lo = hi = best
+    if scores[best] > 0:
+        while hi - lo < 2:
+            nxt = [(scores[j], j) for j in (lo - 1, hi + 1) if 0 <= j < len(sents) and scores[j] >= scores[best] * 0.5]
+            if not nxt:
+                break
+            j = max(nxt)[1]
+            lo, hi = min(lo, j), max(hi, j)
     # 太短的句子（比如只有半句）带上下一句
-    if len(quote) < 80 and best + 1 < len(sents):
-        quote = f"{quote} {sents[best + 1]}"
-    return quote[:max_chars]
+    if len(" ".join(sents[lo : hi + 1])) < 80 and hi + 1 < len(sents):
+        hi += 1
+    return " ".join(sents[lo : hi + 1])[:max_chars]
 
 
 # ---------------------------------------------------------------------------
@@ -200,32 +224,45 @@ def locate(path: Path, text: str, page: int | None = None, claim: str = "") -> d
 # ---------------------------------------------------------------------------
 # 与论断最相关的段落（预览窗口右侧的「最相关的原文」）
 # ---------------------------------------------------------------------------
+def _windows_of(paras: list[tuple[str, str | None, int]], max_chars: int = 520) -> list[tuple[str, str | None, int]]:
+    """长段落按句子切成不超过 max_chars 的小段：返回给用户的「最相关的原文」更聚焦，也不会截断证据"""
+    out = []
+    for text, sec, pg in paras:
+        if len(text) <= max_chars:
+            out.append((text, sec, pg))
+            continue
+        buf = ""
+        for snt in _sentences(text):
+            if buf and len(buf) + len(snt) + 1 > max_chars:
+                out.append((buf, sec, pg))
+                buf = ""
+            buf = f"{buf} {snt}".strip()
+        if buf:
+            out.append((buf, sec, pg))
+    return out
+
+
 def passages(path: Path, claim: str, k: int = 3) -> list[dict]:
-    """按与论断的词重合打分（tf 取对数，词按稀有程度加权）。单篇论文段落少，BM25 的 idf 在小语料上会退化成 0，这里不用它。"""
+    """与论断最相关的几段原文。按词重合打分（词按稀有程度加权，段落长度做轻微惩罚）；
+    单篇论文段落少，BM25 的 idf 在小语料上会退化成 0，这里不用它。"""
     import math
-    from collections import Counter
 
     from .ingest import extract_pdf_pages, split_paragraphs
-    from .retrieval import tokenize
 
-    paras = split_paragraphs(extract_pdf_pages(path))
+    paras = _windows_of(split_paragraphs(extract_pdf_pages(path)))
     if not paras:
         return []
     terms = _claim_terms(claim)
     if not terms:
-        return [{"page": pg, "section": sec, "text": t[:600], "score": 0.0} for t, sec, pg in paras[:k]]
-    docs = [Counter(tokenize(t)) for t, _, _ in paras]
-    n = len(docs)
-    df = Counter(w for d in docs for w in set(d) if w in terms)
-    scores = []
-    for d in docs:
-        sc = sum((1 + math.log(d[w])) * math.log(1 + n / df[w]) for w in terms if d.get(w))
-        scores.append(sc / (1 + math.log(1 + sum(d.values())) * 0.1))
-    order = sorted(range(n), key=lambda i: -scores[i])
+        return [{"page": pg, "section": sec, "text": t, "score": 0.0} for t, sec, pg in paras[:k]]
+    units = [_terms_of(t) for t, _, _ in paras]
+    raw = _weighted(terms, units)
+    scores = [sc / (1 + 0.1 * math.log(1 + len(u))) for sc, u in zip(raw, units)]
+    order = sorted(range(len(paras)), key=lambda i: -scores[i])
     out = []
     for i in order[:k]:
         if scores[i] <= 0 and out:
             break
         t, sec, pg = paras[i]
-        out.append({"page": pg, "section": sec, "text": t[:600], "score": round(scores[i], 3)})
+        out.append({"page": pg, "section": sec, "text": t, "score": round(scores[i], 3)})
     return out

@@ -3,13 +3,13 @@ import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from 
 import Tooltip from '@mui/material/Tooltip'
 import Box from '@mui/material/Box'
 import { useApp } from '../../lib/appContext'
-import { citeStore, formatInline, useCiteState } from '../../lib/citations'
+import { citeToken, formatInline, pageLabel, useCiteState, type CitePages } from '../../lib/citations'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     citation: {
-      /** 在光标处插入引用（ids 为文献库中的 paper id） */
-      insertCitation: (ids: string[]) => ReturnType
+      /** 在光标处插入引用（ids 为文献库中的 paper id；pages 为页码定位，如 { id: "3" }） */
+      insertCitation: (ids: string[], pages?: CitePages) => ReturnType
     }
   }
 }
@@ -32,8 +32,9 @@ function CitationView(props: ReactNodeViewProps) {
   const st = useCiteState()
   const { openReader } = useApp()
   const ids: string[] = node.attrs.ids ?? []
+  const pages: CitePages = node.attrs.pages ?? {}
   const missing = ids.some((id) => !st.papers[id])
-  const label = formatInline(ids, st)
+  const label = formatInline(ids, st, pages)
   const tip = (
     <Box sx={{ py: 0.25 }}>
       {ids.map((id) => {
@@ -44,12 +45,14 @@ function CitationView(props: ReactNodeViewProps) {
           <Box key={id} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.25 }}>
             <span style={{ flex: 1 }}>
               {p.title}（{p.authors?.[0] ?? '佚名'}
-              {p.authors?.length > 1 ? ' 等' : ''}, {p.year ?? 'n.d.'}）
+              {p.authors?.length > 1 ? ' 等' : ''}, {p.year ?? 'n.d.'}）{pages[id] ? ` · ${pageLabel(pages[id])}` : ''}
             </span>
             {readable && (
               <Box
                 component="button"
-                onClick={() => openReader({ paperId: id, claim: sentenceAround(props) })}
+                onClick={() =>
+                  openReader({ paperId: id, claim: sentenceAround(props), evidences: pages[id] ? [{ page: Number.parseInt(pages[id], 10) || null }] : undefined })
+                }
                 sx={{ all: 'unset', cursor: 'pointer', color: '#9fd0ff', whiteSpace: 'nowrap', fontSize: 12, '&:hover': { textDecoration: 'underline' } }}
               >
                 看原文 →
@@ -70,9 +73,8 @@ function CitationView(props: ReactNodeViewProps) {
 }
 
 /** 引用标记 → 纯文本时的表示：[@key1; @key2]（与 pandoc 语法一致，便于让 LLM 改写时原样保留） */
-export function citationToText(ids: string[]): string {
-  const papers = citeStore.get().papers
-  return `[${ids.map((id) => '@' + (papers[id]?.bibkey ?? id)).join('; ')}]`
+export function citationToText(ids: string[], pages?: CitePages): string {
+  return citeToken(ids, pages)
 }
 
 export const Citation = Node.create({
@@ -96,6 +98,18 @@ export const Citation = Node.create({
         },
         renderHTML: (attrs) => ({ 'data-ids': JSON.stringify(attrs.ids ?? []) }),
       },
+      // 页码定位：{ 文献 id: "3" }（从 PDF 里「引用这句」或 @ 笔记插入时带上）
+      pages: {
+        default: {},
+        parseHTML: (el) => {
+          try {
+            return JSON.parse(el.getAttribute('data-pages') || '{}')
+          } catch {
+            return {}
+          }
+        },
+        renderHTML: (attrs) => (attrs.pages && Object.keys(attrs.pages).length ? { 'data-pages': JSON.stringify(attrs.pages) } : {}),
+      },
     }
   },
 
@@ -108,7 +122,7 @@ export const Citation = Node.create({
   },
 
   renderText({ node }) {
-    return citationToText(node.attrs.ids ?? [])
+    return citationToText(node.attrs.ids ?? [], node.attrs.pages)
   },
 
   addNodeView() {
@@ -118,9 +132,9 @@ export const Citation = Node.create({
   addCommands() {
     return {
       insertCitation:
-        (ids) =>
+        (ids, pages) =>
         ({ chain }) =>
-          chain().insertContent({ type: 'citation', attrs: { ids } }).run(),
+          chain().insertContent({ type: 'citation', attrs: { ids, pages: pages ?? {} } }).run(),
     }
   },
 })

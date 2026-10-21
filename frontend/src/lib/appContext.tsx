@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { Alert, Snackbar } from '@mui/material'
 import { api } from './api'
 import { citeStore } from './citations'
+import { notesStore } from './notes'
 import type { Health, Paper, PaperIn } from './types'
 
 /** 右侧抽屉里的视图 */
@@ -160,6 +161,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const list = await api.papers()
     setPapers(list)
     citeStore.setPapers(list)
+    notesStore.refresh().catch(() => undefined) // 删除文献时笔记也会被删掉
     return list
   }, [])
 

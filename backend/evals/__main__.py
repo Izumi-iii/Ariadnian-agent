@@ -1,4 +1,4 @@
-"""运行测评：  uv run python -m evals [--tasks judge,fake_cite] [--limit 50] [--model deepseek/deepseek-chat] [--offline]
+"""运行测评：  uv run python -m evals [--tasks judge,fake_cite,locate] [--limit 50] [--model deepseek/deepseek-chat] [--offline]
 
 （仓库根目录下也可以用 npm run eval -- <同样的参数>）
 
@@ -45,7 +45,7 @@ def _prepare_env(args: argparse.Namespace) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m evals", description="Ariadne 测评")
-    ap.add_argument("--tasks", default="judge,fake_cite,retrieval,missing,latency", help="逗号分隔")
+    ap.add_argument("--tasks", default="judge,fake_cite,retrieval,missing,locate,latency", help="逗号分隔")
     ap.add_argument("--limit", type=int, default=None, help="每个任务最多取多少条（默认全部）")
     ap.add_argument("--workers", type=int, default=4, help="并发调用模型的线程数")
     ap.add_argument("--model", default=None, help="临时把所有档位换成这个模型，如 deepseek/deepseek-chat")
@@ -92,6 +92,10 @@ def main(argv: list[str] | None = None) -> int:
                 out[name] = tasks.run_retrieval(bundle, lib, args.limit, s.llm_fake)
             elif name == "missing":
                 out[name] = tasks.run_missing(bundle, args.limit, args.workers)
+            elif name == "locate":
+                from .locate import run_locate
+
+                out[name] = run_locate(bundle, args.limit)
             elif name == "latency":
                 out[name] = tasks.run_latency(bundle, args.limit) if not s.llm_fake else {"skipped": "离线模式不测延迟"}
             out[name]["seconds"] = round(time.perf_counter() - ts, 1)

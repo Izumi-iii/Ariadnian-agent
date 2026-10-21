@@ -1,15 +1,22 @@
 import { diffChars, diffWordsWithSpace } from 'diff'
 import { Box } from '@mui/material'
 import { brand } from '../theme'
-import { citeStore, formatInline } from '../lib/citations'
+import { CITE_RE, citeStore, formatInline, parseCiteBody, type CitePages } from '../lib/citations'
 
 /** 把 [@key; @key2] 显示成当前引用格式的标签，如 [1, 2] */
 function prettyCites(text: string): string {
   const st = citeStore.get()
   const byKey = new Map(Object.values(st.papers).map((p) => [p.bibkey, p.id]))
-  return text.replace(/\[((?:@[\w:.-]+(?:\s*;\s*)?)+)\]/g, (m, keys: string) => {
-    const ids = keys.split(';').map((k) => byKey.get(k.trim().replace(/^@/, ''))).filter(Boolean) as string[]
-    return ids.length ? formatInline(ids, st) : m
+  return text.replace(CITE_RE, (m, body: string) => {
+    const ids: string[] = []
+    const pages: CitePages = {}
+    for (const { key, page } of parseCiteBody(body)) {
+      const id = byKey.get(key)
+      if (!id) continue
+      ids.push(id)
+      if (page) pages[id] = page
+    }
+    return ids.length ? formatInline(ids, st, pages) : m
   })
 }
 

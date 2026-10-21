@@ -1,11 +1,8 @@
 import type { Editor, JSONContent } from '@tiptap/core'
-import { citeStore } from './citations'
+import { CITE_RE, citeStore, citeToken, parseCiteBody, type CitePages } from './citations'
 
 const leaf = (node: any) => {
-  if (node.type.name === 'citation') {
-    const papers = citeStore.get().papers
-    return `[${(node.attrs.ids as string[]).map((id) => '@' + (papers[id]?.bibkey ?? id)).join('; ')}]`
-  }
+  if (node.type.name === 'citation') return citeToken(node.attrs.ids ?? [], node.attrs.pages)
   if (node.type.name === 'hardBreak') return '\n'
   return ''
 }
@@ -15,19 +12,23 @@ export function textBetween(editor: Editor, from: number, to: number): string {
   return editor.state.doc.textBetween(from, to, '\n\n', leaf)
 }
 
-const CITE_RE = /\[((?:@[\w:.-]+(?:\s*;\s*)?)+)\]/g
-
 /** 把含 [@key] 标记的文本转换回 TipTap 内容（引用变回 citation 节点）。 */
 export function inlineFromText(text: string): JSONContent[] {
   const byKey = new Map(Object.values(citeStore.get().papers).map((p) => [p.bibkey, p.id]))
   const out: JSONContent[] = []
   let last = 0
   for (const m of text.matchAll(CITE_RE)) {
-    const keys = m[1].split(';').map((k) => k.trim().replace(/^@/, ''))
-    const ids = keys.map((k) => byKey.get(k)).filter(Boolean) as string[]
+    const ids: string[] = []
+    const pages: CitePages = {}
+    for (const { key, page } of parseCiteBody(m[1])) {
+      const id = byKey.get(key)
+      if (!id) continue
+      ids.push(id)
+      if (page) pages[id] = page
+    }
     if (!ids.length) continue // 文献库里没有的 key 原样保留为文本，绝不凭空生成引用
     if (m.index! > last) out.push({ type: 'text', text: text.slice(last, m.index) })
-    out.push({ type: 'citation', attrs: { ids } })
+    out.push({ type: 'citation', attrs: { ids, pages } })
     last = m.index! + m[0].length
   }
   if (last < text.length) out.push({ type: 'text', text: text.slice(last) })

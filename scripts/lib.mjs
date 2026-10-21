@@ -1,6 +1,6 @@
 // 启动脚本共用的小工具：只用 Node 内置模块，Windows / macOS / Linux 通用
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -90,9 +90,26 @@ export async function waitFor(url, timeoutMs = 60000) {
   return false
 }
 
+/** package.json 里新加了依赖、但 node_modules 里还没有（例如 git pull 之后）时返回缺少的包 */
+function missingFrontendDeps() {
+  try {
+    const pkg = JSON.parse(readFileSync(join(FRONTEND, 'package.json'), 'utf8'))
+    const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })
+    return deps.filter((d) => !existsSync(join(FRONTEND, 'node_modules', ...d.split('/'), 'package.json')))
+  } catch {
+    return []
+  }
+}
+
 export function ensureInstalled() {
   if (!existsSync(join(BACKEND, '.venv')) || !existsSync(join(FRONTEND, 'node_modules'))) {
     warn('依赖还没安装，先执行一次 npm run setup')
     run('node', [join(ROOT, 'scripts', 'setup.mjs')])
+    return
+  }
+  const missing = missingFrontendDeps()
+  if (missing.length) {
+    warn(`前端有新依赖还没安装（${missing.join(', ')}），先安装`)
+    run('npm', ['install', '--no-audit', '--no-fund'], { cwd: FRONTEND })
   }
 }

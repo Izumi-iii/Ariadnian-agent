@@ -13,6 +13,8 @@ import { api, pdfFileUrl } from '../lib/api'
 import { useApp, type Evidence } from '../lib/appContext'
 import { authorYearLabel, citeStore, formatInline } from '../lib/citations'
 import type { Paper, PdfHighlight } from '../lib/types'
+import { NOTE_COLORS, notesStore, useNotes, type Note } from '../lib/notes'
+import { NotePopover, NotesList, SelectionMenu } from '../pdf/NotesUI'
 // pdf.js 体积较大，用到时才加载
 const PdfViewer = lazy(() => import('../pdf/PdfViewer').then((m) => ({ default: m.PdfViewer })))
 import { Card } from '../components/Thread'
@@ -33,6 +35,10 @@ export function ReaderPanel() {
   const [fetchError, setFetchError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const ev = evidences[idx]
+  const notes = useNotes(paper?.id)
+  const [activeNote, setActiveNote] = useState<string | null>(null)
+  const [popover, setPopover] = useState<{ note: Note; at: { x: number; y: number } } | null>(null)
+  const [focus, setFocus] = useState<{ page: number; y?: number; key: number } | null>(null)
 
   useEffect(() => {
     setIdx(0)
@@ -84,14 +90,32 @@ export function ReaderPanel() {
 
   if (!reader || !paper) return <ReaderEmpty papers={papers} onOpen={(id) => openReader({ paperId: id })} />
 
-  const insertCite = () => {
+  /** 插入引用（可带页码）；quote 不为空时连同原句一起插入：“原句”[1, p. 3] */
+  const insertCite = (page?: number | null, quote?: string) => {
     if (!editor) return
-    let pos = reader.insertAt ?? editor.state.selection.to
-    pos = Math.min(pos, editor.state.doc.content.size)
+    let pos = Math.min(reader.insertAt ?? editor.state.selection.to, editor.state.doc.content.size)
     const prev = editor.state.doc.textBetween(Math.max(0, pos - 1), pos)
-    if (reader.insertAt == null && /[。．.!?！？]/.test(prev)) pos -= 1
-    editor.chain().focus().insertContentAt(pos, { type: 'citation', attrs: { ids: [paper.id] } }).run()
-    notify(`已插入引用 ${formatInline([paper.id], citeStore.get())}`, 'success')
+    if (reader.insertAt == null && !quote && /[。．.!?！？]/.test(prev)) pos -= 1
+    const pages = page ? { [paper.id]: String(page) } : {}
+    const cite = { type: 'citation', attrs: { ids: [paper.id], pages } }
+    editor.chain().focus().insertContentAt(pos, quote ? [{ type: 'text', text: `“${quote}”` }, cite] : cite).run()
+    notify(`已插入引用 ${formatInline([paper.id], citeStore.get(), pages)}`, 'success')
+  }
+
+  const saveNote = async (sel: { page: number; rects: number[][]; text: string }, color: Note['color'], comment: string) => {
+    try {
+      const n = await api.createNote({ paper_id: paper.id, page: sel.page, quote: sel.text, rects: sel.rects, color, comment })
+      notesStore.upsert(n)
+      notify(comment ? '已保存笔记，写作时输入 @ 可以引用它' : '已划线', 'success')
+    } catch (e: any) {
+      notify(e.message, 'error')
+      throw e
+    }
+  }
+
+  const openNote = (n: Note) => {
+    setActiveNote(n.id)
+    setFocus({ page: n.page, y: Math.min(...n.rects.map((r) => r[1]), 0.5), key: Date.now() })
   }
 
   const upload = async (f: File) => {
@@ -143,6 +167,8 @@ export function ReaderPanel() {
         </Card>
       </Box>
 
+      {paper.has_pdf && <NotesList notes={notes} active={activeNote} onOpen={openNote} onCite={(n) => insertCite(n.page)} />}
+
       {/* 原文 */}
       {paper.has_pdf ? (
         <Suspense fallback={<Box sx={{ flex: 1, bgcolor: '#ececec' }} />}>
@@ -152,6 +178,19 @@ export function ReaderPanel() {
           highlight={hl}
           jumpKey={`${reader.nonce}-${idx}`}
           onError={(m) => notify(m, 'error')}
+          focus={focus}
+          marks={notes.map((n) => ({ id: n.id, page: n.page, rects: n.rects, fill: NOTE_COLORS[n.color].fill }))}
+          activeMark={activeNote}
+          onMarkClick={(id, at) => {
+            const n = notes.find((x) => x.id === id)
+            if (n) {
+              setActiveNote(id)
+              setPopover({ note: n, at })
+            }
+          }}
+          renderSelectionMenu={(sel, close) => (
+            <SelectionMenu sel={sel} close={close} canCite={!!editor} onCite={(s2, withQuote) => insertCite(s2.page, withQuote ? s2.text : undefined)} onSave={saveNote} />
+          )}
         />
         </Suspense>
       ) : (
@@ -192,10 +231,36 @@ export function ReaderPanel() {
         </Box>
       )}
 
+      <NotePopover
+        note={popover ? notes.find((n) => n.id === popover.note.id) ?? null : null}
+        at={popover?.at ?? null}
+        onClose={() => setPopover(null)}
+        onCite={(n) => {
+          insertCite(n.page)
+          setPopover(null)
+        }}
+        onUpdate={(n, fields) =>
+          api
+            .updateNote(n.id, fields)
+            .then((x) => notesStore.upsert(x))
+            .catch((e) => notify(e.message, 'error'))
+        }
+        onDelete={(n) =>
+          api
+            .deleteNote(n.id)
+            .then(() => {
+              notesStore.remove(n.id)
+              setPopover(null)
+              notify('已删除笔记', 'success')
+            })
+            .catch((e) => notify(e.message, 'error'))
+        }
+      />
+
       {/* 底部操作 */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1.25, borderTop: `1px solid ${brand.line}`, bgcolor: '#fff' }}>
-        <Button variant="contained" startIcon={<FormatQuoteIcon />} disabled={!editor} onClick={insertCite}>
-          插入引用 {formatInline([paper.id], citeStore.get())}
+        <Button variant="contained" startIcon={<FormatQuoteIcon />} disabled={!editor} onClick={() => insertCite(hl?.page ?? ev?.page ?? null)}>
+          插入引用 {formatInline([paper.id], citeStore.get(), hl?.page ?? ev?.page ? { [paper.id]: String(hl?.page ?? ev?.page) } : undefined)}
         </Button>
         {evidences.length > 1 && (
           <Button variant="outlined" onClick={() => setIdx((idx + 1) % evidences.length)}>

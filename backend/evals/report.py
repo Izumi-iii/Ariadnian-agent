@@ -64,6 +64,14 @@ def summarize(r: dict) -> str:
     if "missing" in t:
         m = t["missing"]
         lines.append(f"缺引用检测  {m['sentences']} 句  P {_p(m['precision'])}  R {_p(m['recall'])}  F1 {_p(m['f1'])}")
+    if "locate" in t and "locate" in t["locate"]:
+        lc = t["locate"]
+        lo = lc["locate"]
+        lines.append(f"原文定位  n={lc['n']}  定位准确率 {_p(_g(lo, 'claim', 'hit'))}（只取首句 {_p(_g(lo, 'first_sentence', 'hit'))}）  "
+                     f"高亮精确率 {_p(_g(lo, 'claim', 'precision'))}（整块高亮 {_p(_g(lo, 'whole_chunk', 'precision'))}）  "
+                     f"证据覆盖 {_p(_g(lo, 'claim', 'coverage'))}  P50 {_ms(lc.get('latency_p50_ms'))}")
+        lines.append(f"  相关段落 R@1 {_p(_g(lc, 'passages', 'recall@1'))}  R@3 {_p(_g(lc, 'passages', 'recall@3'))}  |  "
+                     f"中文论断 n={_g(lc, 'locate_zh', 'n')}  定位 {_p(_g(lc, 'locate_zh', 'hit'))}  段落 R@3 {_p(_g(lc, 'passages_zh', 'recall@3'))}")
     if "latency" in t and "complete" in t["latency"]:
         c = t["latency"]["complete"]
         lines.append(f"行内续写  P50 {_ms(c['p50_ms'])}  P95 {_ms(c['p95_ms'])}  空结果 {_p(c['empty_rate'])}")
@@ -84,8 +92,8 @@ HEADER = """# 测评结果
 
 由 `npm run eval`（或 `cd backend && uv run python -m evals`）生成，每次运行追加一行。说明见 [../README.md](../README.md)。
 
-| 运行 | 引用判断<br/>准确率 | 假支持率 ↓ | 中文论断<br/>准确率 | 假引用检出<br/>随机 / 难例 | 正确引用<br/>误报 ↓ | 检索 R@5<br/>英文 / 中文 / 中文+扩展 | 缺引用<br/>F1 | 续写<br/>P50 | 花费 |
-|---|---|---|---|---|---|---|---|---|---|
+| 运行 | 引用判断<br/>准确率 | 假支持率 ↓ | 中文论断<br/>准确率 | 假引用检出<br/>随机 / 难例 | 正确引用<br/>误报 ↓ | 检索 R@5<br/>英文 / 中文 / 中文+扩展 | 缺引用<br/>F1 | 原文定位<br/>准确率 / 段落 R@3 | 续写<br/>P50 | 花费 |
+|---|---|---|---|---|---|---|---|---|---|---|
 """
 
 
@@ -109,6 +117,7 @@ def write_index(results_dir: Path) -> None:
             _p(fk.get("false_alarm_red")) if fk else "—",
             " / ".join(_p(_g(rt, k, "recall@5")) for k in ("en_bm25", "zh_bm25", "zh_bm25_expand")) if rt else "—",
             _p(_g(t, "missing", "f1")),
+            f"{_p(_g(t, 'locate', 'locate', 'claim', 'hit'))} / {_p(_g(t, 'locate', 'passages', 'recall@3'))}" if _g(t, "locate", "locate") else "—",
             _ms(_g(t, "latency", "complete", "p50_ms")),
             _cost(r) if r["mode"] == "model" else "—",
         ]) + " |")
