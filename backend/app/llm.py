@@ -14,9 +14,11 @@ import json
 import logging
 import os
 import re
+import itertools
 import time
 from typing import Any, Callable, Iterator, Literal
 
+from . import runstats
 from .config import ModelTier, get_settings
 
 os.environ.setdefault("LITELLM_LOG", "ERROR")
@@ -27,6 +29,7 @@ litellm.suppress_debug_info = True
 litellm.telemetry = False
 logging.getLogger("LiteLLM").setLevel(logging.ERROR)
 
+_stream_ids = itertools.count(1)
 Tier = Literal["complete", "write", "judge", "agent"]
 FakeFn = Callable[[list[dict[str, str]]], str] | str | None
 
@@ -103,23 +106,43 @@ def _check_ready(t: ModelTier) -> None:
 # 调用日志
 # ---------------------------------------------------------------------------
 def _log(tier: str, model: str, *, stream: bool, ok: bool, latency: float, first_token: float | None = None,
-         usage: Any = None, cost: float | None = None, error: str | None = None) -> None:
+         usage: Any = None, cost: float | None = None, error: str | None = None, stream_key: int | None = None) -> None:
+    pt = getattr(usage, "prompt_tokens", None) if usage else None
+    ct = getattr(usage, "completion_tokens", None) if usage else None
+    cached = _cached_tokens(usage)
+    meter = runstats.current()
+    if meter is not None:  # 属于某个 Agent 任务：计入这次运行的统计
+        try:
+            meter.record(model, ok=ok, latency=latency, first_token=first_token, prompt_tokens=pt,
+                         completion_tokens=ct, cached_tokens=cached, cost=cost, stream_key=stream_key)
+        except Exception:  # noqa: BLE001
+            pass
     try:
         from .db import get_conn
 
-        pt = getattr(usage, "prompt_tokens", None) if usage else None
-        ct = getattr(usage, "completion_tokens", None) if usage else None
-        cached = _cached_tokens(usage)
         with get_conn() as conn:
             conn.execute(
                 "INSERT INTO llm_calls (tier, model, stream, ok, latency_ms, first_token_ms, prompt_tokens,"
-                " completion_tokens, cached_tokens, cost_usd, error) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                " completion_tokens, cached_tokens, cost_usd, error, thread_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (tier, model, int(stream), int(ok), int(latency * 1000),
                  int(first_token * 1000) if first_token is not None else None, pt, ct, cached, cost,
-                 (error or "")[:300] or None),
+                 (error or "")[:300] or None, meter.thread_id if meter else None),
             )
     except Exception:  # 日志失败不能影响主流程
         pass
+
+
+def _fake_record(tier: str, messages: list[dict[str, str]], text: str, started: float, first: float | None = None,
+                 stream_key: int | None = None) -> None:
+    """离线演示：按字数粗估 token，让 Agent 运行统计也有数可看（不写入 llm_calls）"""
+    meter = runstats.current()
+    if meter is None:
+        return
+    est = lambda s: max(1, int(len(s) / 1.6))  # noqa: E731  中英混排大约 1.6 字符一个 token
+    configured = get_settings().tiers[tier].model  # 按设置里的模型算上下文窗口，演示更接近真实
+    meter.record(resolve_model(configured) if configured else "fake", ok=True, latency=time.perf_counter() - started, first_token=first,
+                 prompt_tokens=sum(est(str(m.get("content", ""))) for m in messages), completion_tokens=est(text),
+                 cached_tokens=None, cost=None, stream_key=stream_key)
 
 
 def _cached_tokens(usage: Any) -> int | None:
@@ -168,7 +191,9 @@ def chat(
 ) -> str:
     s = get_settings()
     if s.llm_fake:
-        return _fake_text(messages, fake)
+        text = _fake_text(messages, fake)
+        _fake_record(tier, messages, text, time.perf_counter())
+        return text
     t = s.tiers[tier]
     _check_ready(t)
     last_err: Exception | None = None
@@ -212,14 +237,20 @@ def stream_chat(
     fake: FakeFn = None,
 ) -> Iterator[str]:
     s = get_settings()
+    meter = runstats.current()
+    key = next(_stream_ids)  # 这次调用在运行统计里的标识（实时速度）
     if s.llm_fake:
         text = _fake_text(messages, fake)
         # npm run demo 会设置 LLM_FAKE_STREAM_DELAY，模拟生成速度，前端才能看到流式效果
         delay = float(os.getenv("LLM_FAKE_STREAM_DELAY", "0") or 0)
+        start = time.perf_counter()
         for i in range(0, len(text), 6):
             if delay:
                 time.sleep(delay)
+            if meter is not None:
+                meter.stream_tick(key, start)
             yield text[i : i + 6]
+        _fake_record(tier, messages, text, start, 0.0 if text else None, stream_key=key)
         return
     t = s.tiers[tier]
     _check_ready(t)
@@ -242,11 +273,15 @@ def stream_chat(
                 if delta:
                     if first is None:
                         first = time.perf_counter() - start
+                    if meter is not None:
+                        meter.stream_tick(key, start)
                     yield delta
-            _log(tier, model, stream=True, ok=True, latency=time.perf_counter() - start, first_token=first, usage=usage)
+            _log(tier, model, stream=True, ok=True, latency=time.perf_counter() - start, first_token=first, usage=usage,
+                 stream_key=key)
             return
         except Exception as e:  # noqa: BLE001
-            _log(tier, model, stream=True, ok=False, latency=time.perf_counter() - start, first_token=first, error=repr(e))
+            _log(tier, model, stream=True, ok=False, latency=time.perf_counter() - start, first_token=first, error=repr(e),
+                 stream_key=key)
             if first is not None:  # 已经输出了一部分，不能再切换模型重来
                 raise
             last_err = e

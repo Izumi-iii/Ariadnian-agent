@@ -17,6 +17,8 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { api } from '../lib/api'
 import { useAgentStream } from '../lib/agentStream'
+import { runStats } from '../lib/runStats'
+import { RunStatsBar } from './RunStatsBar'
 import { collectSections, critiqueStore } from '../lib/critique'
 import { CritiqueRun } from './CritiqueRun'
 import { AgentHistory, type ThreadInfo } from './AgentHistory'
@@ -335,6 +337,7 @@ export function AgentPanel() {
   }, [editor])
 
   const reset = () => {
+    runStats.focus(null)
     setSub(null)
     setThreadId(null)
     setStatus('idle')
@@ -348,6 +351,7 @@ export function AgentPanel() {
   // 打开历史里的某次任务
   const openThread = async (t: ThreadInfo) => {
     reset()
+    runStats.focus(t.thread_id)
     if (t.kind === 'write') return setSub({ kind: 'write', threadId: t.thread_id })
     if (t.kind === 'critique') return setSub({ kind: 'critique', threadId: t.thread_id })
     const st = await api.agentState(t.thread_id)
@@ -364,6 +368,11 @@ export function AgentPanel() {
       setStatus('stopped')
     }
   }
+
+  // 开始新的分节写作 / 审稿（还没选历史任务）：先清掉上一个任务的统计，新任务开始后自动显示
+  useEffect(() => {
+    if (sub && !sub.threadId) runStats.focus(null)
+  }, [sub])
 
   // 切换文档：恢复这篇文档最近一次还没结束的任务（等你确认 / 被停止），否则回到首页
   useEffect(() => {
@@ -682,6 +691,7 @@ export function AgentPanel() {
           </Thread>
         )}
       </Box>
+      <RunStatsBar />
       <Composer
         value={input}
         onChange={setInput}

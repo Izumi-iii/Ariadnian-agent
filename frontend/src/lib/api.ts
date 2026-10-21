@@ -142,7 +142,7 @@ export const api = {
     }),
 
   agentThreads: (docId?: string) =>
-    req<{ thread_id: string; topic: string; status: string; kind?: 'review' | 'write' | 'critique'; created_at: string; updated_at?: string }[]>(
+    req<{ thread_id: string; topic: string; status: string; kind?: 'review' | 'write' | 'critique'; created_at: string; updated_at?: string; tokens?: number | null }[]>(
       `/api/agent${docId ? `?doc_id=${docId}` : ''}`,
     ),
   questions: (title: string, headings: string[], refresh = false) =>
@@ -150,6 +150,7 @@ export const api = {
       '/api/assist/questions',
       { method: 'POST', body: JSON.stringify({ title, headings, refresh }) },
     ),
+  agentStats: (tid: string) => req<import('./runStats').RunStats | null>(`/api/agent/${tid}/stats`),
   agentStop: (tid: string) => req<{ ok: boolean }>(`/api/agent/${tid}/stop`, { method: 'POST' }),
   agentState: (tid: string) => req<{ thread_id: string; status: string; interrupt: any; result: any }>(`/api/agent/${tid}`),
 }

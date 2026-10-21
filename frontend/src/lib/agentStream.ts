@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, streamSSE } from './api'
+import { runStats } from './runStats'
 
 /**
  * Agent 的 SSE 流：可以中途停止。
@@ -15,8 +16,17 @@ export function useAgentStream() {
     const c = new AbortController()
     ctrl.current = c
     setRunning(true)
+    runStats.setRunning(true)
     try {
-      await streamSSE(path, body, onEvent, c.signal)
+      await streamSSE(
+        path,
+        body,
+        (e) => {
+          runStats.onEvent(e)
+          if (e?.type !== 'stats') onEvent(e)
+        },
+        c.signal,
+      )
       return 'ok'
     } catch (e: any) {
       if (c.signal.aborted) return 'stopped'
@@ -25,6 +35,7 @@ export function useAgentStream() {
       if (ctrl.current === c) {
         ctrl.current = null
         setRunning(false)
+        runStats.setRunning(false)
       }
     }
   }, [])
