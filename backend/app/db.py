@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS agent_threads (
     thread_id   TEXT PRIMARY KEY,
     doc_id      TEXT,
     topic       TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'review',
     status      TEXT NOT NULL DEFAULT 'running',
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
@@ -114,6 +115,10 @@ def init_db() -> None:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(llm_calls)")}
         if "cached_tokens" not in cols:
             conn.execute("ALTER TABLE llm_calls ADD COLUMN cached_tokens INTEGER")
+        # 旧数据库补列：Agent 任务类型（review=综述→大纲，write=分节写作）
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_threads)")}
+        if "kind" not in cols:
+            conn.execute("ALTER TABLE agent_threads ADD COLUMN kind TEXT NOT NULL DEFAULT 'review'")
         conn.commit()
         conn.close()
         _initialized = True

@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import assist
+from ..questions import suggest_questions
 from ..llm import LLMNotConfigured
 from .sse import sse_response
 
@@ -77,6 +78,19 @@ def cite(body: CiteIn):
 @router.post("/verify")
 def verify(body: VerifyIn):
     return {"results": [assist.verify_citation(body.sentence, pid) for pid in body.paper_ids]}
+
+
+class QuestionsIn(BaseModel):
+    title: str = ""
+    headings: list[str] = []
+    k: int = 4
+    refresh: bool = False
+
+
+@router.post("/questions")
+def questions(body: QuestionsIn):
+    """文献问答的示例问题：结合当前论文和文献库生成，只保留文献库里检索得到依据的"""
+    return {"questions": suggest_questions(body.title, body.headings, max(1, min(body.k, 8)), body.refresh)}
 
 
 @router.post("/ask")

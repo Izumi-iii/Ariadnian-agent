@@ -12,9 +12,9 @@ import { ReaderPanel } from './ReaderPanel'
 
 const VIEWS: RightTab[] = ['agent', 'cite', 'ask', 'library', 'reader', 'docs']
 
-/** 右侧抽屉：综述 Agent / 找引用 / 文献问答 / 文献库 / 原文 / 我的论文。平时收起，Ctrl+J 切换 */
+/** 右侧抽屉：Agent（综述 / 分节写作 / 审稿）/ 找引用 / 文献问答 / 文献库 / 原文 / 我的论文。平时收起，Ctrl+J 切换 */
 export function DrawerPanel() {
-  const { rightTab, setRightTab, setDrawerOpen, reader } = useApp()
+  const { rightTab, setRightTab, setDrawerOpen, reader, agentAlert } = useApp()
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#fcfcfc', borderLeft: `1px solid ${brand.lineSoft}` }}>
       <Box sx={{ px: 2, pt: 1.5, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -26,7 +26,13 @@ export function DrawerPanel() {
               value={rightTab}
               onChange={setRightTab}
               options={[
-                ['agent', '综述 Agent'],
+                [
+                  'agent',
+                  <>
+                    Agent
+                    {agentAlert && <Box component="span" sx={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', bgcolor: brand.red, ml: 0.5, mb: '2px' }} />}
+                  </>,
+                ],
                 ['cite', '找引用'],
                 ['ask', '文献问答'],
                 ['library', '文献库'],

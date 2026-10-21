@@ -2,6 +2,7 @@ import type { Editor } from '@tiptap/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import { citeStore } from './citations'
+import { paraKey, SEED_EVENT } from './writer'
 
 /** 后端 /api/assist/annotate 返回的批注 */
 export interface CiteItem {
@@ -27,6 +28,8 @@ export type Annotation =
   | { id: string; kind: 'cite_check'; anchor: string; items: CiteItem[] }
   | { id: string; kind: 'missing_citation'; anchor: string; reason: string; candidates: Candidate[] }
   | { id: string; kind: 'rewrite'; anchor: string; revised: string; reason: string }
+  /** 审稿 Agent 的意见（不来自 annotate，由 critique 状态生成） */
+  | { id: string; kind: 'reviewer'; anchor: string; issue: import('./critique').CritiqueIssue }
 
 /** 定位到当前文档后的批注 */
 export type PlacedAnnotation = Annotation & {
@@ -61,11 +64,12 @@ function fnv(s: string): string {
 }
 
 /** 把文档里的段落序列化，同时记下纯文本每个字符对应的文档位置 */
-export function collectParagraphs(editor: Editor): Para[] {
+export function collectParagraphs(editor: Editor, minLen = 30): Para[] {
   const papers = citeStore.get().papers
   const out: Para[] = []
   editor.state.doc.descendants((node, pos) => {
     if (node.type.name !== 'paragraph') return true
+    if (node.attrs.live) return false // Agent 正在流式写入的段落：写完再检查
     let marked = ''
     let plain = ''
     const map: number[] = []
@@ -89,7 +93,7 @@ export function collectParagraphs(editor: Editor): Para[] {
       return false
     })
     const t = plain.trim()
-    if (t.length >= 30 && !t.startsWith('写作要点')) out.push({ pos, marked, plain, map, cites, hash: fnv(marked) })
+    if (t.length >= minLen && !t.startsWith('写作要点')) out.push({ pos, marked, plain, map, cites, hash: fnv(marked) })
     return false
   })
   return out
@@ -179,6 +183,33 @@ export function useMarginReview(editor: Editor | null, docId: string, title: str
       cancelAnimationFrame(raf)
     }
   }, [editor])
+
+  // 分节写作写入的段落：后端已经核查过，直接用它的批注
+  const seeds = useRef(new Map<string, Annotation[]>())
+  useEffect(() => {
+    const on = (e: Event) => {
+      for (const it of (e as CustomEvent<{ key: string; annotations: Annotation[] }[]>).detail ?? []) seeds.current.set(it.key, it.annotations)
+      if (editor) setParas(collectParagraphs(editor))
+    }
+    window.addEventListener(SEED_EVENT, on)
+    return () => window.removeEventListener(SEED_EVENT, on)
+  }, [editor])
+  useEffect(() => {
+    if (!seeds.current.size) return
+    const add: Record<string, Annotation[]> = {}
+    for (const p of paras) {
+      const k = paraKey(p.plain)
+      const a = seeds.current.get(k)
+      if (a && !(p.hash in cache)) add[p.hash] = a
+      if (a) seeds.current.delete(k)
+    }
+    if (Object.keys(add).length)
+      setCache((c) => {
+        const next = { ...c, ...add }
+        save(cacheKey, next)
+        return next
+      })
+  }, [paras, cache, cacheKey])
 
   // 停顿后把还没检查过的段落放进队列（跳过光标所在段落）
   const schedule = useCallback(

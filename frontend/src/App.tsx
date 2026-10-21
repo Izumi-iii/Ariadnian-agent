@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Allotment, type AllotmentHandle } from 'allotment'
 import 'allotment/dist/style.css'
 import {
-  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem,
+  Badge, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem,
   Tooltip, Typography,
 } from '@mui/material'
 import RateReviewOutlinedIcon from '@mui/icons-material/RateReviewOutlined'
@@ -230,7 +230,7 @@ const RAIL: [RightTab, string, typeof StorageOutlinedIcon][] = [
 ]
 
 function Rail() {
-  const { drawerOpen, rightTab, toggleDrawer, setDocId, bumpDocs } = useApp()
+  const { drawerOpen, rightTab, toggleDrawer, setDocId, bumpDocs, agentAlert } = useApp()
   const group = (t: RightTab) => (t === 'agent' || t === 'cite' || t === 'ask' ? 'agent' : t === 'reader' ? 'library' : t)
   return (
     <Box sx={{ width: 52, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.75, pt: 1.5, borderRight: `1px solid ${brand.lineSoft}` }}>
@@ -250,7 +250,7 @@ function Rail() {
       {RAIL.map(([key, label, Icon]) => {
         const active = drawerOpen && group(rightTab) === key
         return (
-          <Tooltip key={key} title={label} placement="right">
+          <Tooltip key={key} title={key === 'agent' && agentAlert ? agentAlert : label} placement="right">
             <IconButton
               aria-label={label.replace(/（.*）/, '')}
               onClick={() => toggleDrawer(key)}
@@ -259,7 +259,9 @@ function Rail() {
                 '&:hover': { bgcolor: active ? 'rgba(0,120,212,0.13)' : 'rgba(0,0,0,0.05)' },
               }}
             >
-              <Icon sx={{ fontSize: 21 }} />
+              <Badge variant="dot" color="error" invisible={key !== 'agent' || !agentAlert} overlap="circular">
+                <Icon sx={{ fontSize: 21 }} />
+              </Badge>
             </IconButton>
           </Tooltip>
         )

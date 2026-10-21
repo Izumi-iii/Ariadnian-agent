@@ -15,15 +15,24 @@ import AutorenewIcon from '@mui/icons-material/Autorenew'
 import NoteAddOutlinedIcon from '@mui/icons-material/NoteAddOutlined'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import { api, streamSSE } from '../lib/api'
+import { api } from '../lib/api'
+import { useAgentStream } from '../lib/agentStream'
+import { collectSections, critiqueStore } from '../lib/critique'
+import { CritiqueRun } from './CritiqueRun'
+import { AgentHistory, type ThreadInfo } from './AgentHistory'
+import RateReviewOutlinedIcon from '@mui/icons-material/RateReviewOutlined'
+import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined'
 import { useApp } from '../lib/appContext'
 import { contentFromText } from '../lib/editorText'
+import { outlineFromDoc } from '../lib/writer'
+import EditNoteIcon from '@mui/icons-material/EditNote'
+import { WriterRun, type WriterStart } from './WriterRun'
 import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import type { OutlineSection, PaperIn } from '../lib/types'
 import { Card, Composer, Thread, ThreadItem } from '../components/Thread'
 import { brand } from '../theme'
 
-type Status = 'idle' | 'running' | 'waiting' | 'done' | 'error'
+type Status = 'idle' | 'running' | 'waiting' | 'done' | 'stopped' | 'error'
 
 interface Candidate extends PaperIn {
   cid: number
@@ -241,9 +250,48 @@ function ReviewOutlineCard({ value, onSubmit }: { value: any; onSubmit: (v: any)
   )
 }
 
+// ------------------------------------------------------------------ 首页的 Agent 卡片
+function Launcher({
+  icon, title, desc, hint, disabled, onClick, children,
+}: {
+  icon: React.ReactNode
+  title: string
+  desc: string
+  hint?: string
+  disabled?: boolean
+  onClick?: () => void
+  children?: React.ReactNode
+}) {
+  return (
+    <Box
+      role={onClick ? 'button' : undefined}
+      aria-disabled={disabled || undefined}
+      onClick={disabled ? undefined : onClick}
+      sx={{
+        display: 'flex', gap: 1.25, p: 1.25, mb: 1, borderRadius: '8px', border: `1px solid ${brand.line}`, bgcolor: '#fff',
+        cursor: onClick && !disabled ? 'pointer' : 'default', opacity: disabled ? 0.6 : 1, transition: 'border-color .15s, box-shadow .15s',
+        '&:hover': onClick && !disabled ? { borderColor: brand.purple, boxShadow: '0 2px 8px rgba(135,100,184,0.15)' } : {},
+      }}
+    >
+      <Box sx={{ color: brand.purple, '& svg': { fontSize: 20 }, pt: '1px' }}>{icon}</Box>
+      <Box sx={{ minWidth: 0, flex: 1 }}>
+        <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{title}</Typography>
+        <Typography sx={{ fontSize: 12, color: brand.muted, lineHeight: 1.6, mt: 0.25 }}>{desc}</Typography>
+        {hint && (
+          <Typography sx={{ fontSize: 11.5, color: disabled ? brand.amber : brand.faint, mt: 0.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            {hint}
+          </Typography>
+        )}
+        {children}
+      </Box>
+    </Box>
+  )
+}
+
 // ------------------------------------------------------------------ 主面板
 export function AgentPanel() {
-  const { docId, editor, papers, refreshPapers, notify } = useApp()
+  const { docId, editor, papers, refreshPapers, notify, alertAgent } = useApp()
+  const { run, stop, running } = useAgentStream()
   const [input, setInput] = useState('')
   const [topic, setTopic] = useState('')
   const [language, setLanguage] = useState<'zh' | 'en'>('zh')
@@ -258,10 +306,36 @@ export function AgentPanel() {
   const [pending, setPending] = useState<any>(null)
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sub, setSub] = useState<
+    { kind: 'write'; start?: WriterStart; threadId?: string } | { kind: 'critique'; threadId?: string } | null
+  >(null)
+  const [docOutline, setDocOutline] = useState<OutlineSection[]>([])
+  const [docChars, setDocChars] = useState(0)
   const lastT = useRef(0)
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  // 文档里已有的一级标题大纲：可以直接按它逐节写作
+  useEffect(() => {
+    if (!editor) return
+    let t = 0
+    const calc = () => {
+      setDocOutline(outlineFromDoc(editor))
+      setDocChars(collectSections(editor).reduce((a, s) => a + s.text.length, 0))
+    }
+    const upd = () => {
+      window.clearTimeout(t)
+      t = window.setTimeout(calc, 400)
+    }
+    calc()
+    editor.on('update', upd)
+    return () => {
+      editor.off('update', upd)
+      window.clearTimeout(t)
+    }
+  }, [editor])
+
   const reset = () => {
+    setSub(null)
     setThreadId(null)
     setStatus('idle')
     setSteps([])
@@ -271,28 +345,47 @@ export function AgentPanel() {
     setError(null)
   }
 
+  // 打开历史里的某次任务
+  const openThread = async (t: ThreadInfo) => {
+    reset()
+    if (t.kind === 'write') return setSub({ kind: 'write', threadId: t.thread_id })
+    if (t.kind === 'critique') return setSub({ kind: 'critique', threadId: t.thread_id })
+    const st = await api.agentState(t.thread_id)
+    setThreadId(t.thread_id)
+    setTopic(t.topic)
+    if (st.interrupt) {
+      setStatus('waiting')
+      setPending(st.interrupt)
+      setLog(['已从上次中断处恢复'])
+    } else if (st.status === 'done') {
+      setStatus('done')
+      setResult(st.result)
+    } else {
+      setStatus('stopped')
+    }
+  }
+
+  // 切换文档：恢复这篇文档最近一次还没结束的任务（等你确认 / 被停止），否则回到首页
   useEffect(() => {
     reset()
+    critiqueStore.clear()
     if (!docId) return
     api
       .agentThreads(docId)
-      .then(async (threads) => {
+      .then((threads) => {
         const t = threads[0]
-        if (!t || t.status === 'error') return
-        const st = await api.agentState(t.thread_id)
-        setThreadId(t.thread_id)
-        setTopic(t.topic)
-        if (st.interrupt) {
-          setStatus('waiting')
-          setPending(st.interrupt)
-          setLog(['已从上次中断处恢复'])
-        } else if (st.status === 'done') {
-          setStatus('done')
-          setResult(st.result)
-        }
+        // 审稿结束后意见仍留在页边，所以最近一次审稿也恢复
+        if (t && (['waiting', 'stopped', 'running'].includes(t.status) || (t.kind === 'critique' && t.status === 'done' && !critiqueStore.isDismissed(t.thread_id)))) openThread(t)
+        // 面板打开的是别的任务时，最近一次审稿的意见照样挂回页边
+        const c = threads.find((x) => x.kind === 'critique' && x.status !== 'error')
+        if (c && c !== t && !critiqueStore.isDismissed(c.thread_id))
+          api.agentState(c.thread_id).then((st) => {
+            const v = st.interrupt?.kind === 'revise' ? st.interrupt : st.result
+            if (v?.issues?.length && !critiqueStore.get().threadId) critiqueStore.load(c.thread_id, v, !st.interrupt)
+          })
       })
       .catch(() => undefined)
-  }, [docId])
+  }, [docId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const scroll = () => setTimeout(() => scrollRef.current?.scrollTo({ top: 1e6, behavior: 'smooth' }), 30)
 
@@ -311,18 +404,20 @@ export function AgentPanel() {
         setLog([])
       } else if (e.type === 'interrupt') {
         setPending(e.value)
+        alertAgent(e.value.kind === 'select_papers' ? '综述 Agent：检索完成，等你勾选文献' : '综述 Agent：大纲生成好了，等你确认')
       } else if (e.type === 'done') {
         setStatus('done')
         setResult(e.result)
         setPending(null)
         refreshPapers()
+        alertAgent('综述 Agent 已完成')
       } else if (e.type === 'error') {
         setStatus('error')
         setError(e.message)
       }
       scroll()
     },
-    [refreshPapers],
+    [refreshPapers, alertAgent],
   )
 
   const start = async (t: string) => {
@@ -332,25 +427,45 @@ export function AgentPanel() {
     setStatus('running')
     lastT.current = performance.now()
     try {
-      await streamSSE(
+      const r = await run(
         '/api/agent/start',
         { topic: t, doc_id: docId, language, paper_type: paperType, max_papers: maxPapers, fetch_pdf: fetchPdf === 'yes' },
         handle,
       )
+      if (r === 'stopped') setStatus('stopped')
     } catch (e: any) {
       setStatus('error')
       setError(e.message)
     }
   }
 
+  // 停在请求半路时，「继续」把最近一次的选择补发出去
+  const lastSent = useRef<{ kind: string; value: any } | null>(null)
+  const cont = async () => {
+    if (!threadId) return
+    const st = await api.agentState(threadId).catch(() => null)
+    if (st?.interrupt) {
+      if (lastSent.current?.kind === st.interrupt.kind) return resume(lastSent.current!.value)
+      setPending(st.interrupt)
+      return setStatus('waiting')
+    }
+    if (st?.status === 'done') {
+      setResult(st.result)
+      return setStatus('done')
+    }
+    resume({})
+  }
+
   const resume = async (value: any) => {
     if (!threadId) return
+    if (pending) lastSent.current = { kind: pending.kind, value }
     setPending(null)
     setStatus('running')
     lastT.current = performance.now()
     scroll()
     try {
-      await streamSSE(`/api/agent/${threadId}/resume`, { value }, handle)
+      const r = await run(`/api/agent/${threadId}/resume`, { value }, handle)
+      if (r === 'stopped') setStatus('stopped')
     } catch (e: any) {
       setStatus('error')
       setError(e.message)
@@ -384,18 +499,56 @@ export function AgentPanel() {
 
   return (
     <>
-      <Box ref={scrollRef} sx={{ flex: 1, overflow: 'auto', px: 2, pt: 1 }}>
-        {status === 'idle' ? (
+      <Box sx={{ display: 'flex', alignItems: 'center', px: 2, pb: 0.5, gap: 1 }}>
+        <Typography sx={{ fontSize: 12, color: brand.faint, flex: 1 }}>
+          {sub?.kind === 'write' ? '分节写作' : sub?.kind === 'critique' ? '审稿' : status === 'idle' ? '选择一个 Agent' : '综述'}
+        </Typography>
+        <AgentHistory docId={docId} onOpen={openThread} disabled={running} />
+      </Box>
+      <Box ref={scrollRef} sx={{ flex: 1, overflow: 'auto', px: 2, pt: 0.5 }}>
+        {sub?.kind === 'write' ? (
+          <WriterRun key={sub.threadId ?? 'new'} start={sub.start} threadId={sub.threadId} language={language} paperType={paperType} onExit={reset} />
+        ) : sub?.kind === 'critique' ? (
+          <CritiqueRun key={sub.threadId ?? 'new'} threadId={sub.threadId} language={language} paperType={paperType} onExit={reset} />
+        ) : status === 'idle' ? (
           <Box>
-            <Typography sx={{ fontSize: 13, color: brand.muted, lineHeight: 1.7, mb: 1.5 }}>
-              输入研究主题，Agent 会检索 arXiv / Semantic Scholar，<b>由你勾选文献</b>，归纳研究现状，再生成大纲<b>交给你确认</b>。每次暂停的状态都会保存，刷新页面也能接着做。
+            <Launcher
+              icon={<AccountTreeOutlinedIcon />}
+              title="综述"
+              desc="从研究主题出发：检索文献 → 你勾选 → 归纳研究现状 → 生成大纲交给你确认"
+              hint="在下方输入框写主题，或点一个例子"
+            >
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.75 }}>
+                {EXAMPLES.map((ex) => (
+                  <Chip
+                    key={ex}
+                    size="small"
+                    label={ex}
+                    onClick={() => setInput(ex)}
+                    sx={{ height: 'auto', py: 0.25, fontSize: 11.5, color: brand.muted, bgcolor: '#fff', border: `1px dashed ${brand.line}`, '& .MuiChip-label': { whiteSpace: 'normal' } }}
+                  />
+                ))}
+              </Box>
+            </Launcher>
+            <Launcher
+              icon={<EditNoteIcon />}
+              title="分节写作"
+              desc="按文档里的一级标题大纲逐节写草稿：每节单独检索，引用只来自文献库，写完自查引用"
+              disabled={!docOutline.length}
+              hint={docOutline.length ? `${docOutline.length} 节：${docOutline.map((x) => x.title).join(' · ')}` : '文档里还没有一级标题：先用「综述」生成大纲，或自己写几个一级标题'}
+              onClick={() => setSub({ kind: 'write', start: { outline: docOutline, topic: docOutline.map((x) => x.title).join('；'), from: 'doc' } })}
+            />
+            <Launcher
+              icon={<RateReviewOutlinedIcon />}
+              title="审稿"
+              desc="模拟审稿人挑逻辑和论据上的问题，意见挂在正文旁边；你修改后再审一轮，最多几轮"
+              disabled={docChars < 50}
+              hint={docChars >= 50 ? `当前正文约 ${docChars} 字` : '正文还太少，写一些内容再来审稿'}
+              onClick={() => setSub({ kind: 'critique' })}
+            />
+            <Typography sx={{ fontSize: 11.5, color: brand.faint, mt: 1.5, lineHeight: 1.6 }}>
+              每次暂停都会保存，刷新页面或关掉程序后也能接着做；右上角「历史」可以回到以前的任务。
             </Typography>
-            <Typography sx={{ fontSize: 12, color: brand.faint, mb: 0.75 }}>试试这些主题</Typography>
-            {EXAMPLES.map((ex) => (
-              <Card key={ex} variant="dashed" onClick={() => setInput(ex)} sx={{ mb: 0.75, color: brand.muted, fontSize: 12.5 }}>
-                {ex}
-              </Card>
-            ))}
           </Box>
         ) : (
           <Thread>
@@ -413,9 +566,13 @@ export function AgentPanel() {
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: steps.length || status === 'running' ? 0.5 : 0 }}>
                   <Typography sx={{ fontSize: 13, fontWeight: 500, color: brand.purple, flex: 1 }}>综述 Agent</Typography>
                   {total > 0 && <Typography sx={{ fontSize: 11.5, color: brand.muted }}>{fmt(total)}</Typography>}
-                  {status !== 'running' && (
-                    <Tooltip title="新任务">
-                      <IconButton onClick={reset} sx={{ ml: 0.5, p: 0.25 }}>
+                  {status === 'running' ? (
+                    <Button size="small" startIcon={<StopCircleOutlinedIcon />} onClick={() => stop(threadId)} sx={{ ml: 0.5, color: brand.red, py: 0, minHeight: 24, fontSize: 12 }}>
+                      停止
+                    </Button>
+                  ) : (
+                    <Tooltip title="返回首页">
+                      <IconButton onClick={reset} sx={{ ml: 0.5, p: 0.25 }} aria-label="返回">
                         <RestartAltIcon sx={{ fontSize: 16 }} />
                       </IconButton>
                     </Tooltip>
@@ -432,7 +589,7 @@ export function AgentPanel() {
                   ))}
                 {!steps.length && status !== 'running' && (
                   <Typography sx={{ fontSize: 12, color: brand.muted }}>
-                    {status === 'waiting' ? '已从上次中断处恢复，等你确认后继续' : status === 'done' ? '已完成（从保存的状态恢复）' : ''}
+                    {status === 'waiting' ? '已从上次中断处恢复，等你确认后继续' : status === 'done' ? '已完成（从保存的状态恢复）' : status === 'stopped' ? '已停止' : ''}
                   </Typography>
                 )}
                 {status === 'running' && (
@@ -449,6 +606,17 @@ export function AgentPanel() {
                 )}
               </Card>
             </ThreadItem>
+
+            {status === 'stopped' && !pending && (
+              <ThreadItem icon={<PauseCircleFilledIcon sx={{ color: `${brand.faint} !important` }} />}>
+                <Card sx={{ fontSize: 12.5, color: brand.muted, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ flex: 1 }}>已停止。已经完成的步骤都保存了，可以从停下的地方继续。</Box>
+                  <Button size="small" variant="outlined" onClick={cont}>
+                    继续
+                  </Button>
+                </Card>
+              </ThreadItem>
+            )}
 
             {pending && (
               <ThreadItem icon={<PauseCircleFilledIcon sx={{ color: `${brand.orange} !important` }} />}>
@@ -480,6 +648,15 @@ export function AgentPanel() {
                       <Button variant="contained" startIcon={<NoteAddOutlinedIcon />} onClick={insertOutline} disabled={!editor}>
                         写入文档
                       </Button>
+                      <Button
+                        variant="outlined"
+                        startIcon={<EditNoteIcon />}
+                        disabled={!editor}
+                        onClick={() => setSub({ kind: 'write', start: { outline: result.outline!, topic: result.topic ?? topic, from: 'agent' } })}
+                        sx={{ bgcolor: '#fff' }}
+                      >
+                        逐节写作
+                      </Button>
                       {result.synthesis && (
                         <Button variant="outlined" onClick={insertSynthesis} disabled={!editor} sx={{ bgcolor: '#fff' }}>
                           插入研究现状
@@ -509,8 +686,8 @@ export function AgentPanel() {
         value={input}
         onChange={setInput}
         onSubmit={() => start(input.trim())}
-        busy={status === 'running'}
-        disabled={!docId}
+        busy={running}
+        disabled={!docId || !!sub}
         placeholder={status === 'idle' ? '输入研究主题或论文题目…' : '输入新主题，开始新的综述任务…'}
         left={
           <>

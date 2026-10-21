@@ -1,6 +1,6 @@
 import type { Editor } from '@tiptap/core'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Alert, Snackbar } from '@mui/material'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Alert, Button, Snackbar } from '@mui/material'
 import { api } from './api'
 import { citeStore } from './citations'
 import { notesStore } from './notes'
@@ -85,6 +85,9 @@ interface AppCtx {
   preview: PreviewTarget | null
   openPreview: (t: PreviewTarget) => void
   closePreview: () => void
+  /** Agent 停下来等你 / 跑完了，而你此刻没在看 Agent 面板：图标栏和页签上出红点 */
+  agentAlert: string | null
+  alertAgent: (msg: string) => void
 }
 
 export type SettingsTab = 'model' | 'search' | 'embedding' | 'usage'
@@ -98,7 +101,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [docTitle, setDocTitle] = useState('')
   const [rightTab, setRightTab] = useState<RightTab>('agent')
   const [citeRequest, setCiteRequest] = useState<CiteRequest | null>(null)
-  const [toast, setToast] = useState<{ msg: string; severity: 'success' | 'info' | 'warning' | 'error' } | null>(null)
+  const [toast, setToast] = useState<{ msg: string; severity: 'success' | 'info' | 'warning' | 'error'; action?: { label: string; onClick: () => void } } | null>(null)
+  const [agentAlert, setAgentAlert] = useState<string | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [docsVersion, setDocsVersion] = useState(0)
@@ -198,6 +202,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [drawerOpen, rightTab],
   )
 
+  // 打开了 Agent 页签，提醒就算看过了
+  useEffect(() => {
+    if (drawerOpen && rightTab === 'agent') setAgentAlert(null)
+  }, [drawerOpen, rightTab])
+
+  const watching = useRef({ drawerOpen, rightTab })
+  watching.current = { drawerOpen, rightTab }
+  const alertAgent = useCallback((msg: string) => {
+    const w = watching.current
+    if (w.drawerOpen && w.rightTab === 'agent' && !document.hidden) return
+    setAgentAlert(msg)
+    setToast({
+      msg, severity: 'info',
+      action: {
+        label: '去看看',
+        onClick: () => {
+          setRightTab('agent')
+          setDrawerOpen(true)
+          setToast(null)
+        },
+      },
+    })
+  }, [])
+
   const requestCitations = useCallback((sentence: string, insertAt: number) => {
     setDrawerOpen(true)
     setRightTab('cite')
@@ -210,10 +238,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       rightTab, setRightTab, citeRequest, requestCitations, notify, health,
       drawerOpen, setDrawerOpen, toggleDrawer, copilot, setCopilot, review, setReview, docsVersion, bumpDocs,
       settingsTab, openSettings, closeSettings, refreshHealth, reader, openReader, preview, openPreview, closePreview,
+      agentAlert, alertAgent,
     }),
     [editor, papers, refreshPapers, docId, docTitle, rightTab, citeRequest, requestCitations, notify, health,
       drawerOpen, toggleDrawer, copilot, setCopilot, review, setReview, docsVersion, bumpDocs,
-      settingsTab, openSettings, closeSettings, refreshHealth, reader, openReader, preview, openPreview, closePreview],
+      settingsTab, openSettings, closeSettings, refreshHealth, reader, openReader, preview, openPreview, closePreview,
+      agentAlert, alertAgent],
   )
 
   return (
@@ -226,7 +256,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         {toast ? (
-          <Alert severity={toast.severity} variant="filled" onClose={() => setToast(null)} sx={{ maxWidth: 560 }}>
+          <Alert
+            severity={toast.severity}
+            variant="filled"
+            onClose={() => setToast(null)}
+            action={
+              toast.action ? (
+                <Button color="inherit" size="small" onClick={toast.action.onClick} sx={{ fontWeight: 600 }}>
+                  {toast.action.label}
+                </Button>
+              ) : undefined
+            }
+            sx={{ maxWidth: 560, alignItems: 'center' }}
+          >
             {toast.msg}
           </Alert>
         ) : undefined}

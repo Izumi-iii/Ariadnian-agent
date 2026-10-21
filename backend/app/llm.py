@@ -214,7 +214,11 @@ def stream_chat(
     s = get_settings()
     if s.llm_fake:
         text = _fake_text(messages, fake)
+        # npm run demo 会设置 LLM_FAKE_STREAM_DELAY，模拟生成速度，前端才能看到流式效果
+        delay = float(os.getenv("LLM_FAKE_STREAM_DELAY", "0") or 0)
         for i in range(0, len(text), 6):
+            if delay:
+                time.sleep(delay)
             yield text[i : i + 6]
         return
     t = s.tiers[tier]

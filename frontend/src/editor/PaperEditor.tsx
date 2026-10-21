@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { CharacterCount, Placeholder } from '@tiptap/extensions'
@@ -9,11 +9,15 @@ import { api } from '../lib/api'
 import { useApp } from '../lib/appContext'
 import { citeStore, collectCitationOrder } from '../lib/citations'
 import { useMarginReview } from '../lib/review'
+import { critiqueStore, useCritique, useCritiqueNotes } from '../lib/critique'
+import { groupNotes, kindOf, loadFilter, MARGIN_KINDS, saveFilter, type MarginFilter } from '../lib/marginView'
+import type { PlacedAnnotation } from '../lib/review'
 import { brand } from '../theme'
 import { Citation } from './extensions/Citation'
 import { CitationSuggest } from './extensions/CitationSuggest'
 import { GhostText } from './extensions/GhostText'
 import { ReviewMarks } from './extensions/ReviewMarks'
+import { DraftParagraph } from './extensions/DraftParagraph'
 import { EditorToolbar } from './EditorToolbar'
 import { FloatingToc } from './FloatingToc'
 import { MarginNotes } from './MarginNotes'
@@ -87,6 +91,16 @@ export function PaperEditor({ docId }: { docId: string }) {
   const [loaded, setLoaded] = useState(false)
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [active, setActive] = useState<string | null>(null)
+  const [hover, setHover] = useState<string | null>(null)
+  const cardsRef = useRef<PlacedAnnotation[]>([])
+  const [filter, setFilterState] = useState<MarginFilter>(loadFilter)
+  const setFilter = (f: MarginFilter) => {
+    setFilterState(f)
+    saveFilter(f)
+  }
+  const { responses } = useCritique()
+  const isHandled = useCallback((a: PlacedAnnotation) => a.kind === 'reviewer' && !!responses[a.id], [responses])
+  const lastFocus = useRef(0)
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null)
   const marginRef = useRef<HTMLDivElement | null>(null)
   const saveTimer = useRef<number | undefined>(undefined)
@@ -99,13 +113,14 @@ export function PaperEditor({ docId }: { docId: string }) {
       StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: { openOnClick: false } }),
       Placeholder.configure({
         placeholder: ({ node }) =>
-          node.type.name === 'heading' ? '章节标题' : '开始写作…  输入 @ 插入引用，选中文字让 AI 润色，停顿片刻会出现灰色续写建议（Tab 接受）',
+          node.type.name === 'heading' ? '章节标题' : node.attrs.live ? 'Agent 正在写作…' : '开始写作…  输入 @ 插入引用，选中文字让 AI 润色，停顿片刻会出现灰色续写建议（Tab 接受）',
       }),
       CharacterCount,
       Citation,
       CitationSuggest,
       GhostText,
       ReviewMarks,
+      DraftParagraph,
     ],
     editorProps: { attributes: { class: 'paper-body', spellcheck: 'false' } },
     onUpdate: ({ editor: e, transaction }) => {
@@ -157,8 +172,42 @@ export function PaperEditor({ docId }: { docId: string }) {
 
   const { loading } = useGhostCompletion(editor, copilot, docTitle)
   const rv = useMarginReview(editor, docId, docTitle, review && loaded)
-  const notes = useMemo(() => (review ? rv.placed : []), [review, rv.placed])
+  const crit = useCritiqueNotes(editor)
+  // 审稿意见不受「页边建议」开关影响：它是你主动发起的
+  const allNotes = useMemo(() => [...(review ? rv.placed : []), ...crit].sort((a, b) => a.from - b.from), [review, rv.placed, crit])
+  // 按类型筛选（底部状态条上的开关），正文标记和页边卡片一起筛
+  const notes = useMemo(() => allNotes.filter((n) => filter[kindOf(n)]), [allNotes, filter])
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {}
+    for (const n of allNotes) if (n.card) c[kindOf(n)] = (c[kindOf(n)] ?? 0) + 1
+    return c
+  }, [allNotes])
+
+  // Agent 面板里点了某条审稿意见：高亮并滚动到原文
+  const critRef = useRef(crit)
+  critRef.current = crit
+  useEffect(
+    () =>
+      critiqueStore.subscribe(() => {
+        const f = critiqueStore.get().focus
+        if (!f || !editor || !scrollEl || f.nonce === lastFocus.current) return
+        lastFocus.current = f.nonce
+        const n = critRef.current.find((x) => x.id === f.id)
+        if (!n) return
+        setActive(n.key)
+        try {
+          const top = editor.view.coordsAtPos(n.from).top - scrollEl.getBoundingClientRect().top + scrollEl.scrollTop - 140
+          scrollEl.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+        } catch {
+          /* 位置失效时忽略 */
+        }
+      }),
+    [editor, scrollEl],
+  )
   const cards = useMemo(() => notes.filter((n) => n.card), [notes])
+  cardsRef.current = cards
+  const activeRef = useRef(active)
+  activeRef.current = active
 
   // 正文里的标记与页边卡片同步
   useEffect(() => {
@@ -167,12 +216,58 @@ export function PaperEditor({ docId }: { docId: string }) {
     const id = requestAnimationFrame(() => {
       if (editor.isDestroyed) return
       editor.commands.setReviewMarks(
-        notes.map((n) => ({ key: n.key, kind: n.kind, from: n.from, to: n.to, citePos: n.citePos })),
-        active,
+        notes.map((n) => ({
+          key: n.key, kind: n.kind, from: n.from, to: n.to, citePos: n.citePos,
+          cls: n.kind === 'reviewer' ? `rv-critic-${n.issue.severity}` : undefined,
+        })),
+        hover ?? active,
       )
     })
     return () => cancelAnimationFrame(id)
-  }, [editor, notes, active])
+  }, [editor, notes, active, hover])
+
+  // 光标进入某句有批注的话：展开它的批注（像 Google Docs 的评论）
+  useEffect(() => {
+    if (!editor) return
+    const onSel = () => {
+      const { from, empty } = editor.state.selection
+      if (!empty) return
+      const hit = cardsRef.current.find((n) => from >= n.from && from <= n.to)
+      // 光标离开批注的句子就收起（与 Google Docs 一致）；还在同一句里就保持当前展开的那条
+      setActive((a) => (hit ? (a && cardsRef.current.find((n) => n.key === a && from >= n.from && from <= n.to) ? a : hit.key) : null))
+    }
+    editor.on('selectionUpdate', onSel)
+    return () => {
+      editor.off('selectionUpdate', onSel)
+    }
+  }, [editor])
+
+  // Alt+↓ / Alt+↑：跳到下一条 / 上一条批注
+  useEffect(() => {
+    if (!editor || !scrollEl) return
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return
+      const groups = groupNotes(cardsRef.current)
+      if (!groups.length) return
+      e.preventDefault()
+      const cur = groups.findIndex((g) => g.notes.some((n) => n.key === activeRef.current))
+      const sel = editor.state.selection.from
+      let next: number
+      if (cur >= 0) next = e.key === 'ArrowDown' ? Math.min(groups.length - 1, cur + 1) : Math.max(0, cur - 1)
+      else if (e.key === 'ArrowDown') next = Math.max(0, groups.findIndex((g) => g.from > sel))
+      else next = Math.max(0, groups.map((g) => g.from < sel).lastIndexOf(true))
+      const g = groups[next]
+      setActive(g.notes[0].key)
+      try {
+        const top = editor.view.coordsAtPos(g.from).top - scrollEl.getBoundingClientRect().top + scrollEl.scrollTop - scrollEl.clientHeight / 3
+        scrollEl.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+      } catch {
+        /* 位置失效时忽略 */
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [editor, scrollEl])
 
   // 点击正文里的波浪线 → 高亮对应卡片
   useEffect(() => {
@@ -180,7 +275,7 @@ export function PaperEditor({ docId }: { docId: string }) {
     const dom = editor.view.dom
     const onClick = (e: MouseEvent) => {
       const el = (e.target as HTMLElement).closest('[data-ann]') as HTMLElement | null
-      setActive(el?.dataset.ann ?? null)
+      if (el?.dataset.ann) setActive(el.dataset.ann) // 没点在标记上时交给光标位置决定
     }
     dom.addEventListener('click', onClick)
     return () => dom.removeEventListener('click', onClick)
@@ -241,7 +336,16 @@ export function PaperEditor({ docId }: { docId: string }) {
           </Box>
           {cols.marginW > 0 && (
             <Box sx={{ pt: '28px', pb: 12 }}>
-              <MarginNotes editor={editor} notes={cards} active={active} setActive={setActive} onDismiss={rv.dismiss} columnRef={marginRef} />
+              <MarginNotes
+                editor={editor}
+                notes={cards}
+                active={active}
+                setActive={setActive}
+                onHover={setHover}
+                onDismiss={rv.dismiss}
+                columnRef={marginRef}
+                isHandled={isHandled}
+              />
             </Box>
           )}
         </Box>
@@ -258,16 +362,33 @@ export function PaperEditor({ docId }: { docId: string }) {
                 正在检查 {Math.max(0, rv.total - rv.pending) + 1}/{Math.max(rv.total, 1)} 段
               </Typography>
             ) : (
-              <Tooltip title={cols.marginW ? '' : drawerOpen ? '收起右侧抽屉以显示页边建议' : ''}>
+              <Tooltip title={cols.marginW ? 'Alt+↓ / Alt+↑ 逐条查看' : drawerOpen ? '收起右侧抽屉以显示页边建议' : ''}>
                 <Typography
                   onClick={() => !cols.marginW && drawerOpen && setDrawerOpen(false)}
-                  sx={{ fontSize: 11.5, color: cards.length ? brand.purple : brand.faint, cursor: !cols.marginW && drawerOpen ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
+                  sx={{ fontSize: 11.5, color: cards.length ? brand.ink : brand.faint, cursor: !cols.marginW && drawerOpen ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
                 >
-                  {cards.length ? `页边建议 ${cards.length} 条` : '页边暂无建议'}
+                  {allNotes.some((n) => n.card) ? `页边建议 ${cards.length}` : '页边暂无建议'}
                   {!cols.marginW && cards.length ? '（空间不足，已隐藏）' : ''}
                 </Typography>
               </Tooltip>
             )}
+            {MARGIN_KINDS.filter((k) => counts[k.key]).map((k) => (
+              <Tooltip key={k.key} title={filter[k.key] ? `隐藏「${k.label}」` : `显示「${k.label}」`}>
+                <Box
+                  role="button"
+                  aria-pressed={filter[k.key]}
+                  onClick={() => setFilter({ ...filter, [k.key]: !filter[k.key] })}
+                  sx={{
+                    display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 0.75, height: 20, borderRadius: '10px', cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap',
+                    color: filter[k.key] ? brand.ink : brand.faint, bgcolor: filter[k.key] ? 'rgba(0,0,0,0.05)' : 'transparent',
+                    border: `1px solid ${filter[k.key] ? 'transparent' : brand.line}`, '&:hover': { bgcolor: 'rgba(0,0,0,0.08)' },
+                  }}
+                >
+                  <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: filter[k.key] ? k.color : brand.faint }} />
+                  {k.label} {counts[k.key]}
+                </Box>
+              </Tooltip>
+            ))}
             <Button size="small" onClick={rv.reviewAll} disabled={rv.pending > 0} sx={{ fontSize: 11.5, py: 0, minHeight: 22 }}>
               检查全文
             </Button>

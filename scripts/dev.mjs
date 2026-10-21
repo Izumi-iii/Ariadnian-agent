@@ -6,7 +6,8 @@ const demo = process.argv.includes('--demo')
 requireTools()
 ensureInstalled()
 
-const env = demo ? { LLM_FAKE: '1' } : {}
+// 离线演示也模拟一点生成速度，才能看到流式写作的效果
+const env = demo ? { LLM_FAKE: '1', LLM_FAKE_STREAM_DELAY: process.env.LLM_FAKE_STREAM_DELAY ?? '0.05' } : {}
 if (demo) log(paint('warn', '离线演示模式：不调用模型，学术检索返回示例数据'))
 
 const api = serve('api', 'uv', ['run', 'uvicorn', 'app.main:app', '--reload', '--port', '8000'], { cwd: BACKEND, env })

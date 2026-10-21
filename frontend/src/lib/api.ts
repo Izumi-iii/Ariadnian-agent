@@ -132,9 +132,15 @@ export const api = {
     }),
 
   agentThreads: (docId?: string) =>
-    req<{ thread_id: string; topic: string; status: string; created_at: string }[]>(
+    req<{ thread_id: string; topic: string; status: string; kind?: 'review' | 'write' | 'critique'; created_at: string; updated_at?: string }[]>(
       `/api/agent${docId ? `?doc_id=${docId}` : ''}`,
     ),
+  questions: (title: string, headings: string[], refresh = false) =>
+    req<{ questions: { q: string; papers: { id: string; bibkey: string; short: string; year?: number | null }[]; score: number }[] }>(
+      '/api/assist/questions',
+      { method: 'POST', body: JSON.stringify({ title, headings, refresh }) },
+    ),
+  agentStop: (tid: string) => req<{ ok: boolean }>(`/api/agent/${tid}/stop`, { method: 'POST' }),
   agentState: (tid: string) => req<{ thread_id: string; status: string; interrupt: any; result: any }>(`/api/agent/${tid}`),
 }
 
