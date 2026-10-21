@@ -8,6 +8,7 @@ import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined'
 import TravelExploreIcon from '@mui/icons-material/TravelExplore'
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined'
 import QueryStatsIcon from '@mui/icons-material/QueryStats'
+import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
@@ -95,7 +96,7 @@ function TestBadge({ r, busy }: { r?: TestResult | null; busy?: boolean }) {
     return (
       <Typography sx={{ fontSize: 12, color: brand.green, display: 'flex', alignItems: 'center', gap: 0.5 }}>
         <CheckCircleIcon sx={{ fontSize: 15 }} />
-        {r.fake ? r.reply ?? r.sample : `连接成功 · ${r.latency_ms} ms${r.reply ? ` · 回复「${r.reply}」` : ''}${r.sample ? ` · 示例：${r.sample.slice(0, 40)}` : ''}`}
+        {r.fake ? r.reply ?? r.sample : `连接成功 · ${r.latency_ms} ms${r.version ? ` · 版本 ${r.version}` : ''}${r.reply ? ` · 回复「${r.reply}」` : ''}${r.sample ? ` · 示例：${r.sample.slice(0, 40)}` : ''}`}
       </Typography>
     )
   return (
@@ -338,6 +339,7 @@ export function SettingsDialog() {
     ['model', '模型', <SmartToyOutlinedIcon fontSize="small" />],
     ['search', '文献检索', <TravelExploreIcon fontSize="small" />],
     ['embedding', '向量检索', <HubOutlinedIcon fontSize="small" />],
+    ['parse', 'PDF 解析', <PictureAsPdfOutlinedIcon fontSize="small" />],
     ['usage', '用量统计', <QueryStatsIcon fontSize="small" />],
   ]
 
@@ -625,6 +627,90 @@ export function SettingsDialog() {
                     slotProps={{ inputLabel: { shrink: true } }}
                   />
                 </Section>
+              </>
+            ) : settingsTab === 'parse' ? (
+              <>
+                <Section
+                  title="全文解析器"
+                  desc="上传 PDF 或下载开放获取全文时，用哪个工具把 PDF 解析成段落（带章节和页码）。外部服务不可用时会自动退回 PyMuPDF，上传不会失败；更换后，已入库的文献在文献库里「重新解析」即可生效。"
+                >
+                  <RadioGroup value={val('PDF_PARSER') || 'pymupdf'} onChange={(e) => set('PDF_PARSER', e.target.value)}>
+                    {(
+                      [
+                        ['pymupdf', 'PyMuPDF（默认）', '零依赖、速度快，普通的英文论文足够；双栏会先读左栏再读右栏。'],
+                        ['grobid', 'GROBID', '专门解析英文学术论文：章节、段落、公式结构更准，不会把页眉、脚注、图表说明混进正文。CPU 即可，约 4GB 内存。'],
+                        ['mineru', 'MinerU', '擅长中文论文、扫描件（OCR）、复杂版式、公式和表格。需要 NVIDIA GPU（显存 4GB 以上）。'],
+                      ] as const
+                    ).map(([v, l, d]) => (
+                      <FormControlLabel
+                        key={v}
+                        value={v}
+                        control={<Radio size="small" sx={{ alignSelf: 'flex-start', mt: '-2px' }} />}
+                        sx={{ alignItems: 'flex-start', mb: 1 }}
+                        label={
+                          <Box>
+                            <Typography sx={{ fontSize: 13, fontWeight: 500 }}>{l}</Typography>
+                            <Typography sx={{ fontSize: 12, color: brand.muted, lineHeight: 1.6 }}>{d}</Typography>
+                          </Box>
+                        }
+                      />
+                    ))}
+                  </RadioGroup>
+                </Section>
+                {(val('PDF_PARSER') === 'grobid' || val('PDF_PARSER') === 'mineru') && (
+                  <Section
+                    title={val('PDF_PARSER') === 'grobid' ? 'GROBID 服务' : 'MinerU 服务'}
+                    desc={
+                      val('PDF_PARSER') === 'grobid' ? (
+                        <>
+                          本机启动：<code>docker run --rm --init -p 8070:8070 grobid/grobid:0.9.1-crf</code>；Docker 部署用{' '}
+                          <code>docker compose --profile grobid up -d</code>，地址填 <code>http://grobid:8070</code>。
+                        </>
+                      ) : (
+                        <>
+                          本机启动：<code>pip install "mineru[core]"</code> 后运行 <code>mineru-api --host 0.0.0.0 --port 8001</code>；Docker 部署用{' '}
+                          <code>docker compose --profile mineru up -d</code>，地址填 <code>http://mineru:8000</code>。兼容 MinerU 2.x 与 4.x 的接口。
+                        </>
+                      )
+                    }
+                    right={
+                      <Tooltip title={dirty ? '测试使用已保存的设置，请先保存' : ''}>
+                        <span>
+                          <Button
+                            variant="outlined"
+                            disabled={busy.parser || dirty}
+                            onClick={() => runTest('parser', () => api.testParser(val('PDF_PARSER') as 'grobid' | 'mineru'))}
+                          >
+                            测试
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    }
+                  >
+                    {val('PDF_PARSER') === 'grobid' ? (
+                      <TextField fullWidth label="服务地址" placeholder="http://localhost:8070" value={val('GROBID_URL')} onChange={(e) => set('GROBID_URL', e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
+                    ) : (
+                      <Box sx={{ display: 'flex', gap: 1.5 }}>
+                        <TextField sx={{ flex: 1 }} label="服务地址" placeholder="http://localhost:8001" value={val('MINERU_URL')} onChange={(e) => set('MINERU_URL', e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
+                        <TextField
+                          select
+                          sx={{ width: 190 }}
+                          label="解析后端（2.x）"
+                          value={val('MINERU_BACKEND') || 'pipeline'}
+                          onChange={(e) => set('MINERU_BACKEND', e.target.value)}
+                          slotProps={{ inputLabel: { shrink: true }, select: { native: true } }}
+                        >
+                          <option value="pipeline">pipeline（最稳）</option>
+                          <option value="hybrid-auto-engine">hybrid（更准）</option>
+                          <option value="vlm-auto-engine">vlm（显存 8GB+）</option>
+                        </TextField>
+                      </Box>
+                    )}
+                    <Box sx={{ mt: 0.75 }}>
+                      <TestBadge r={tests.parser} busy={busy.parser} />
+                    </Box>
+                  </Section>
+                )}
               </>
             ) : settingsTab === 'embedding' ? (
               <>

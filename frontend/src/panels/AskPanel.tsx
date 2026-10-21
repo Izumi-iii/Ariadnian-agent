@@ -41,7 +41,7 @@ function headingsOf(editor: any): string[] {
 }
 
 export function AskPanel() {
-  const { editor, notify, docTitle, papers, drawerOpen, rightTab } = useApp()
+  const { editor, notify, docTitle, papers, drawerOpen, rightTab, askRequest } = useApp()
   const [sugs, setSugs] = useState<Suggestion[] | null>(null)
   const [sugLoading, setSugLoading] = useState(false)
   const [sugError, setSugError] = useState(false)
@@ -89,6 +89,14 @@ export function AskPanel() {
     }
     patch((m) => ({ ...m, done: true }))
   }
+
+  // 从原文选中的句子「问 AI」
+  const lastAsk = useRef(0)
+  useEffect(() => {
+    if (!askRequest || askRequest.nonce === lastAsk.current) return
+    lastAsk.current = askRequest.nonce
+    ask(askRequest.question)
+  }, [askRequest]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** 把回答插入正文：[n] 换成对应文献的引用节点 */
   const insertAnswer = (m: Msg) => {

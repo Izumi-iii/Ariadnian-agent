@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Allotment, type AllotmentHandle } from 'allotment'
 import 'allotment/dist/style.css'
 import {
-  Badge, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem,
+  Badge, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem,
   Tooltip, Typography,
 } from '@mui/material'
 import RateReviewOutlinedIcon from '@mui/icons-material/RateReviewOutlined'
@@ -25,11 +25,13 @@ import avatar from './assets/ariadne-avatar.png'
 import { PillToggle } from './components/Thread'
 import { SettingsDialog } from './components/SettingsDialog'
 import { PaperEditor } from './editor/PaperEditor'
+import { SplitReader } from './panels/SplitReader'
 import { api } from './lib/api'
 import { useApp, type RightTab } from './lib/appContext'
 import { citeStore, useCiteState } from './lib/citations'
 import { createDoc, relTime, useBootstrapDoc, useDocList } from './lib/docs'
-import { citedIds, download, toLatex, toMarkdown } from './lib/export'
+import { citedIds, docxStyleFor, download, exportDocx, toLatex, toMarkdown, type DocxStyle } from './lib/export'
+import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined'
 import type { CiteStyle } from './lib/types'
 import { DrawerPanel } from './panels/DrawerPanel'
 import { PdfPreviewDialog } from './pdf/PdfPreviewDialog'
@@ -123,12 +125,26 @@ function DocSwitcher() {
 function ExportButton() {
   const { editor, docTitle, notify } = useApp()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
-  const exportAs = async (kind: 'md' | 'tex' | 'bib') => {
+  const st = useCiteState()
+  const [busy, setBusy] = useState(false)
+  const exportAs = async (kind: 'md' | 'tex' | 'bib' | DocxStyle) => {
     setAnchor(null)
     if (!editor) return
     const json = editor.getJSON()
     const name = (docTitle || 'paper').replace(/[\\/:*?"<>|]/g, '_')
     const ids = citedIds(json)
+    if (kind !== 'md' && kind !== 'tex' && kind !== 'bib') {
+      setBusy(true)
+      try {
+        download(`${name}.docx`, await exportDocx(json, docTitle || '论文', kind))
+        notify('已导出 Word 文件', 'success')
+      } catch (e: any) {
+        notify(e.message, 'error')
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
     try {
       if (kind === 'md') download(`${name}.md`, toMarkdown(json, docTitle), 'text/markdown')
       if (kind === 'tex') download(`${name}.tex`, toLatex(json, docTitle), 'application/x-tex')
@@ -141,18 +157,25 @@ function ExportButton() {
   return (
     <>
       <Tooltip title="导出">
-        <IconButton onClick={(e) => setAnchor(e.currentTarget)} sx={{ color: brand.muted }}>
-          <FileDownloadOutlinedIcon fontSize="small" />
+        <IconButton onClick={(e) => setAnchor(e.currentTarget)} disabled={busy} sx={{ color: brand.muted }}>
+          {busy ? <CircularProgress size={16} /> : <FileDownloadOutlinedIcon fontSize="small" />}
         </IconButton>
       </Tooltip>
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
+        <MenuItem onClick={() => editor && exportAs(docxStyleFor(st.style, editor.getJSON()))}>
+          <ListItemIcon><ArticleOutlinedIcon fontSize="small" sx={{ color: '#2b579a' }} /></ListItemIcon>
+          <ListItemText
+            primary="Word（.docx）"
+            secondary={st.style === 'numeric' ? '参考文献按 GB/T 7714—2015 顺序编码' : '参考文献按著者-出版年（中文 GB/T 7714，英文 APA）'}
+          />
+        </MenuItem>
         <MenuItem onClick={() => exportAs('tex')}>
           <ListItemIcon><FunctionsIcon fontSize="small" /></ListItemIcon>
           <ListItemText primary="LaTeX + refs.bib" secondary="可直接上传 Overleaf 编译" />
         </MenuItem>
         <MenuItem onClick={() => exportAs('md')}>
           <ListItemIcon><DescriptionOutlinedIcon fontSize="small" /></ListItemIcon>
-          <ListItemText primary="Markdown + refs.bib" secondary="pandoc 引用语法，可转 Word" />
+          <ListItemText primary="Markdown + refs.bib" secondary="pandoc 引用语法" />
         </MenuItem>
         <MenuItem onClick={() => exportAs('bib')}>
           <ListItemIcon><MenuBookOutlinedIcon fontSize="small" /></ListItemIcon>
@@ -164,7 +187,7 @@ function ExportButton() {
 }
 
 function TopBar() {
-  const { docId, health, copilot, setCopilot, review, setReview, openSettings } = useApp()
+  const { docId, health, copilot, setCopilot, review, setReview, openSettings, split, setSplit } = useApp()
   const st = useCiteState()
   const changeStyle = (s: CiteStyle) => {
     citeStore.setStyle(s)
@@ -193,6 +216,18 @@ function TopBar() {
           </Tooltip>
         )}
         <Box sx={{ width: '1px', height: 22, bgcolor: brand.line }} />
+        <Tooltip title="分屏对照：左边写，右边读原文（可同时开多篇）">
+          <span>
+            <PillToggle<'write' | 'split'>
+              value={split ? 'split' : 'write'}
+              onChange={(v) => setSplit(v === 'split')}
+              options={[
+                ['write', '写作'],
+                ['split', '分屏对照'],
+              ]}
+            />
+          </span>
+        </Tooltip>
         <PillToggle<CiteStyle>
           value={st.style}
           onChange={changeStyle}
@@ -272,7 +307,7 @@ function Rail() {
 
 // ------------------------------------------------------------------ 主布局：图标栏 | 正文（目录 + 页边批注）| 助手抽屉
 export default function App() {
-  const { docId, drawerOpen, setDrawerOpen, reader, rightTab } = useApp()
+  const { docId, drawerOpen, setDrawerOpen, reader, rightTab, split } = useApp()
   useBootstrapDoc()
   const splitRef = useRef<AllotmentHandle>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -287,6 +322,27 @@ export default function App() {
     }, 30)
     return () => window.clearTimeout(t)
   }, [reader?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 进入 / 退出分屏、开关抽屉时：正文和原文各占一半（抽屉保持原宽度）
+  const layoutSplit = () => {
+    const total = wrapRef.current?.clientWidth ?? 0
+    if (!total) return
+    const drawer = drawerOpen ? 400 : 0
+    if (split) {
+      // 1:1；打开抽屉后空间不够时优先保证正文至少 600px，原文区再窄也有 360px
+      const avail = total - drawer
+      const editor = Math.round(Math.max(avail / 2, Math.min(600, avail - 360)))
+      splitRef.current?.resize([editor, avail - editor, drawer])
+    } else splitRef.current?.resize([total - drawer, 0, drawer])
+  }
+  const wasSplit = useRef(split)
+  useEffect(() => {
+    // 非分屏时开关抽屉交给 Allotment 自己处理（打开原文时还会把抽屉拉宽），只在刚退出分屏时重排一次
+    if (!split && !wasSplit.current) return
+    wasSplit.current = split
+    const t = window.setTimeout(layoutSplit, 30)
+    return () => window.clearTimeout(t)
+  }, [split, drawerOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -307,11 +363,15 @@ export default function App() {
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <Rail />
         <Box ref={wrapRef} sx={{ flex: 1, minWidth: 0 }}>
-          <Allotment ref={splitRef} proportionalLayout={false} separator={false}>
-            <Allotment.Pane minSize={560}>
-              <Box sx={{ height: '100%', p: 1.5, pr: drawerOpen ? 0.75 : 1.5, pt: 0.5, boxSizing: 'border-box' }}>
+          <Allotment ref={splitRef} proportionalLayout={false} separator={false} onReset={layoutSplit}>
+            <Allotment.Pane minSize={split ? 420 : 560}>
+              <Box sx={{ height: '100%', p: 1.5, pr: drawerOpen || split ? 0.75 : 1.5, pt: 0.5, boxSizing: 'border-box' }}>
                 {docId ? <PaperEditor key={docId} docId={docId} /> : <Box sx={{ p: 4, color: 'text.secondary' }}>正在加载…</Box>}
               </Box>
+            </Allotment.Pane>
+            {/* 分屏对照：拖动中间的分隔条调整比例，双击恢复 1:1 */}
+            <Allotment.Pane minSize={360} visible={split} snap={false}>
+              <SplitReader />
             </Allotment.Pane>
             <Allotment.Pane preferredSize={400} minSize={320} maxSize={760} visible={drawerOpen}>
               <DrawerPanel />

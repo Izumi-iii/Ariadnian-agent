@@ -10,7 +10,7 @@ import FormatQuoteIcon from '@mui/icons-material/FormatQuote'
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined'
 import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import { api, pdfFileUrl } from '../lib/api'
-import { useApp, type Evidence } from '../lib/appContext'
+import { useApp, type Evidence, type ReaderTarget } from '../lib/appContext'
 import { authorYearLabel, citeStore, formatInline } from '../lib/citations'
 import type { Paper, PdfHighlight } from '../lib/types'
 import { NOTE_COLORS, notesStore, useNotes, type Note } from '../lib/notes'
@@ -21,8 +21,11 @@ import { Card } from '../components/Thread'
 import { brand } from '../theme'
 import { VerdictChip } from './CitePanel'
 
-export function ReaderPanel() {
-  const { reader, papers, refreshPapers, editor, notify, openReader } = useApp()
+export function ReaderPanel({ target, variant = 'drawer' }: { target?: ReaderTarget | null; variant?: 'drawer' | 'split' } = {}) {
+  const ctx = useApp()
+  const { papers, refreshPapers, editor, notify, openReader, askAI } = ctx
+  // 抽屉里读的是全局的 reader；分屏里每个标签页传入自己的 target
+  const reader = variant === 'split' ? target ?? null : ctx.reader
   const paper: Paper | undefined = useMemo(() => papers.find((p) => p.id === reader?.paperId), [papers, reader?.paperId])
   const given: Evidence[] = reader?.evidences?.filter((e) => e.snippet || e.page) ?? []
   // 只给了那句话、没有依据（比如从正文里的引用打开）：在原文里找最相关的几段当作依据
@@ -174,6 +177,7 @@ export function ReaderPanel() {
         <Suspense fallback={<Box sx={{ flex: 1, bgcolor: '#ececec' }} />}>
         <PdfViewer
           src={pdfFileUrl({ paper_id: paper.id })}
+          toc={variant === 'split'}
           page={ev?.page ?? null}
           highlight={hl}
           jumpKey={`${reader.nonce}-${idx}`}
@@ -189,7 +193,14 @@ export function ReaderPanel() {
             }
           }}
           renderSelectionMenu={(sel, close) => (
-            <SelectionMenu sel={sel} close={close} canCite={!!editor} onCite={(s2, withQuote) => insertCite(s2.page, withQuote ? s2.text : undefined)} onSave={saveNote} />
+            <SelectionMenu
+              sel={sel}
+              close={close}
+              canCite={!!editor}
+              onCite={(s2, withQuote) => insertCite(s2.page, withQuote ? s2.text : undefined)}
+              onSave={saveNote}
+              onAsk={(s2) => askAI(`请解释《${paper.title}》第 ${s2.page} 页的这段原文，并说明它和我正在写的内容有什么关系：「${s2.text.slice(0, 400)}」`)}
+            />
           )}
         />
         </Suspense>

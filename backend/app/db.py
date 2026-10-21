@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS papers (
     source        TEXT,
     citation_count INTEGER,
     has_fulltext  INTEGER NOT NULL DEFAULT 0,
+    parser        TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS chunks (
@@ -119,6 +120,10 @@ def init_db() -> None:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_threads)")}
         if "kind" not in cols:
             conn.execute("ALTER TABLE agent_threads ADD COLUMN kind TEXT NOT NULL DEFAULT 'review'")
+        # 旧数据库补列：全文是哪个解析器解析的（pymupdf / grobid / mineru）
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(papers)")}
+        if "parser" not in cols:
+            conn.execute("ALTER TABLE papers ADD COLUMN parser TEXT")
         conn.commit()
         conn.close()
         _initialized = True

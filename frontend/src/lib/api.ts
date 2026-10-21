@@ -22,6 +22,14 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /** 读取 text/event-stream（POST 版 SSE）。每个 data: 行解析为一个 JSON 事件。 */
+/** 解析全文的结果：parser 是实际用的解析器，note 是外部解析器不可用、退回 PyMuPDF 的原因 */
+export interface ParseResult {
+  paper: Paper
+  chunks: number
+  parser?: string
+  note?: string | null
+}
+
 export async function streamSSE(
   path: string,
   body: unknown,
@@ -68,6 +76,7 @@ export const api = {
     req<SettingsView>('/api/settings', { method: 'PUT', body: JSON.stringify({ values }) }),
   testLLM: (body: { tier?: string; model?: string; api_base?: string | null; api_key?: string }) =>
     req<TestResult>('/api/settings/test-llm', { method: 'POST', body: JSON.stringify(body) }),
+  testParser: (parser: 'grobid' | 'mineru') => req<TestResult>('/api/settings/test-parser', { method: 'POST', body: JSON.stringify({ parser }) }),
   testSearch: (source: string) => req<TestResult>('/api/settings/test-search', { method: 'POST', body: JSON.stringify({ source }) }),
   llmStats: (days = 30) => req<UsageStats>(`/api/llm/stats?days=${days}`),
 
@@ -85,9 +94,10 @@ export const api = {
     const fd = new FormData()
     fd.append('file', file)
     if (paperId) fd.append('paper_id', paperId)
-    return req<{ paper: Paper; chunks: number }>('/api/papers/upload', { method: 'POST', body: fd })
+    return req<ParseResult>('/api/papers/upload', { method: 'POST', body: fd })
   },
-  fetchFulltext: (id: string) => req<{ paper: Paper; chunks: number }>(`/api/papers/${id}/fulltext`, { method: 'POST' }),
+  fetchFulltext: (id: string) => req<ParseResult>(`/api/papers/${id}/fulltext`, { method: 'POST' }),
+  reparse: (id: string) => req<ParseResult>(`/api/papers/${id}/reparse`, { method: 'POST' }),
   chunks: (id: string) => req<{ id: number; section: string; page: number; text: string }[]>(`/api/papers/${id}/chunks`),
   bibtex: (ids?: string[]) => req<string>(`/api/papers/bibtex${ids ? `?ids=${ids.join(',')}` : ''}`),
 

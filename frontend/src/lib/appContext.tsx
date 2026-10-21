@@ -88,9 +88,19 @@ interface AppCtx {
   /** Agent 停下来等你 / 跑完了，而你此刻没在看 Agent 面板：图标栏和页签上出红点 */
   agentAlert: string | null
   alertAgent: (msg: string) => void
+  /** 分屏对照：左边正文、右边原文（可同时开多篇，标签页切换） */
+  split: boolean
+  setSplit: (v: boolean) => void
+  splitTabs: ReaderTarget[]
+  splitActive: string | null
+  setSplitActive: (paperId: string) => void
+  closeSplitTab: (paperId: string) => void
+  /** 在「文献问答」里提问（来自原文选中的句子等） */
+  askRequest: { question: string; nonce: number } | null
+  askAI: (question: string) => void
 }
 
-export type SettingsTab = 'model' | 'search' | 'embedding' | 'usage'
+export type SettingsTab = 'model' | 'search' | 'embedding' | 'parse' | 'usage'
 
 const Ctx = createContext<AppCtx | null>(null)
 
@@ -150,9 +160,67 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const [reader, setReader] = useState<ReaderTarget | null>(null)
+  const [split, setSplitState] = useState(() => {
+    try {
+      return localStorage.getItem('aria.split') === '1'
+    } catch {
+      return false
+    }
+  })
+  const [splitTabs, setSplitTabs] = useState<ReaderTarget[]>(() => {
+    try {
+      return (JSON.parse(localStorage.getItem('aria.splitTabs') || '[]') as string[]).map((paperId, i) => ({ paperId, nonce: i }))
+    } catch {
+      return []
+    }
+  })
+  const [splitActive, setSplitActive] = useState<string | null>(() => splitTabs[0]?.paperId ?? null)
+  useEffect(() => {
+    try {
+      localStorage.setItem('aria.split', split ? '1' : '0')
+      localStorage.setItem('aria.splitTabs', JSON.stringify(splitTabs.map((t) => t.paperId)))
+    } catch {
+      /* ignore */
+    }
+  }, [split, splitTabs])
+  const splitRef = useRef(split)
+  splitRef.current = split
+  const readerRef = useRef(reader)
+  readerRef.current = reader
+  const setSplit = useCallback((v: boolean) => {
+    setSplitState(v)
+    // 进入分屏时，把抽屉里正在读的那篇带过去
+    const r = readerRef.current
+    if (v && r) {
+      setSplitTabs((tabs) => (tabs.some((t) => t.paperId === r.paperId) ? tabs : [...tabs, r]))
+      setSplitActive(r.paperId)
+    }
+    if (v) setRightTab((t) => (t === 'reader' ? 'agent' : t))
+  }, [])
   const openReader = useCallback((t: Omit<ReaderTarget, 'nonce'>) => {
-    setReader({ ...t, nonce: Date.now() })
+    const target = { ...t, nonce: Date.now() }
+    if (splitRef.current) {
+      // 分屏模式：在右边的原文区打开（已开过的标签就切过去并跳到新的依据）
+      setSplitTabs((tabs) => (tabs.some((x) => x.paperId === t.paperId) ? tabs.map((x) => (x.paperId === t.paperId ? target : x)) : [...tabs, target]))
+      setSplitActive(t.paperId)
+      return
+    }
+    setReader(target)
     setRightTab('reader')
+    setDrawerOpen(true)
+  }, [])
+  const closeSplitTab = useCallback((paperId: string) => {
+    setSplitTabs((tabs) => {
+      const i = tabs.findIndex((t) => t.paperId === paperId)
+      const next = tabs.filter((t) => t.paperId !== paperId)
+      setSplitActive((a) => (a === paperId ? next[Math.max(0, i - 1)]?.paperId ?? null : a))
+      return next
+    })
+  }, [])
+  const [askRequest, setAskRequest] = useState<{ question: string; nonce: number } | null>(null)
+  const askAI = useCallback((question: string) => {
+    setAskRequest({ question, nonce: Date.now() })
+    setRightTab('ask')
     setDrawerOpen(true)
   }, [])
   const [preview, setPreview] = useState<PreviewTarget | null>(null)
@@ -238,12 +306,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       rightTab, setRightTab, citeRequest, requestCitations, notify, health,
       drawerOpen, setDrawerOpen, toggleDrawer, copilot, setCopilot, review, setReview, docsVersion, bumpDocs,
       settingsTab, openSettings, closeSettings, refreshHealth, reader, openReader, preview, openPreview, closePreview,
-      agentAlert, alertAgent,
+      agentAlert, alertAgent, split, setSplit, splitTabs, splitActive, setSplitActive, closeSplitTab, askRequest, askAI,
     }),
     [editor, papers, refreshPapers, docId, docTitle, rightTab, citeRequest, requestCitations, notify, health,
       drawerOpen, toggleDrawer, copilot, setCopilot, review, setReview, docsVersion, bumpDocs,
       settingsTab, openSettings, closeSettings, refreshHealth, reader, openReader, preview, openPreview, closePreview,
-      agentAlert, alertAgent],
+      agentAlert, alertAgent, split, setSplit, splitTabs, splitActive, closeSplitTab, askRequest, askAI],
   )
 
   return (

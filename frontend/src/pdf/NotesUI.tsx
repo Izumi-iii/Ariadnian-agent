@@ -8,6 +8,7 @@ import ShortTextIcon from '@mui/icons-material/ShortText'
 import BorderColorOutlinedIcon from '@mui/icons-material/BorderColorOutlined'
 import EditNoteOutlinedIcon from '@mui/icons-material/EditNoteOutlined'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { NOTE_COLORS, type Note, type NoteColor } from '../lib/notes'
@@ -37,7 +38,7 @@ function ColorDots({ value, onChange, size = 14 }: { value: NoteColor; onChange:
 
 // ------------------------------------------------------------------ 选中文字后的浮动菜单
 export function SelectionMenu({
-  sel, close, canCite, onCite, onSave,
+  sel, close, canCite, onCite, onSave, onAsk,
 }: {
   sel: PdfSelection
   close: () => void
@@ -45,6 +46,8 @@ export function SelectionMenu({
   /** withQuote：连同原句一起插入正文 */
   onCite: (sel: PdfSelection, withQuote: boolean) => void
   onSave: (sel: PdfSelection, color: NoteColor, comment: string) => Promise<void>
+  /** 问 AI：在「文献问答」里解释这段原文 */
+  onAsk?: (sel: PdfSelection) => void
 }) {
   const [mode, setMode] = useState<'menu' | 'note'>('menu')
   const [comment, setComment] = useState('')
@@ -115,6 +118,7 @@ export function SelectionMenu({
       {item('引用这句', <FormatQuoteIcon sx={{ fontSize: 16 }} />, () => (onCite(sel, false), close()), !canCite, `在正文插入引用，带页码 p. ${sel.page}`)}
       {item('插入原句', <ShortTextIcon sx={{ fontSize: 16 }} />, () => (onCite(sel, true), close()), !canCite, '把这句原文加引号插入正文，并附上引用')}
       <Box sx={{ width: '1px', height: 18, bgcolor: 'rgba(255,255,255,0.2)', mx: 0.25 }} />
+      {onAsk && item('问 AI', <AutoAwesomeOutlinedIcon sx={{ fontSize: 15 }} />, () => (onAsk(sel), close()), false, '在「文献问答」里解释这段原文')}
       {item('划线', <BorderColorOutlinedIcon sx={{ fontSize: 15 }} />, () => save('yellow', ''), saving, '保存为黄色划线')}
       {item('记笔记', <EditNoteOutlinedIcon sx={{ fontSize: 17 }} />, () => setMode('note'))}
       {item('', <ContentCopyIcon sx={{ fontSize: 14 }} />, () => (navigator.clipboard?.writeText(sel.text), close()), false, '复制')}

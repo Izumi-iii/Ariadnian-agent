@@ -16,9 +16,11 @@ export interface Paper {
   /** 本地有原文 PDF，可以在「原文」里阅读 */
   has_pdf?: boolean
   chunk_count?: number
+  /** 全文用哪个解析器解析的：pymupdf / grobid / mineru */
+  parser?: string | null
 }
 
-export type PaperIn = Omit<Paper, 'id' | 'bibkey' | 'has_fulltext' | 'has_pdf' | 'chunk_count'>
+export type PaperIn = Omit<Paper, 'id' | 'bibkey' | 'has_fulltext' | 'has_pdf' | 'chunk_count' | 'parser'>
 
 export interface DocMeta {
   id: string
@@ -132,6 +134,7 @@ export interface TestResult {
   error?: string
   hint?: string
   authenticated?: boolean
+  version?: string | null
 }
 
 /** PDF 来源：文献库论文用 paper_id，还没入库的论文用 url（临时预览） */

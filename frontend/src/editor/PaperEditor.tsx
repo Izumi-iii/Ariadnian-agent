@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { CharacterCount, Placeholder } from '@tiptap/extensions'
-import { Box, Button, CircularProgress, InputBase, Tooltip, Typography } from '@mui/material'
+import { Box, Button, CircularProgress, InputBase, Popper, Tooltip, Typography } from '@mui/material'
 import CheckIcon from '@mui/icons-material/Check'
 import CloudOffOutlinedIcon from '@mui/icons-material/CloudOffOutlined'
 import { api } from '../lib/api'
@@ -20,7 +20,7 @@ import { ReviewMarks } from './extensions/ReviewMarks'
 import { DraftParagraph } from './extensions/DraftParagraph'
 import { EditorToolbar } from './EditorToolbar'
 import { FloatingToc } from './FloatingToc'
-import { MarginNotes } from './MarginNotes'
+import { MarginNotes, NoteGroupCard } from './MarginNotes'
 import { References } from './References'
 import { SelectionAssist } from './SelectionAssist'
 import { useGhostCompletion } from './useGhostCompletion'
@@ -81,8 +81,9 @@ function useColumns(el: HTMLElement | null) {
   const toc: 'full' | 'mini' = w >= 1240 ? 'full' : 'mini'
   const tocW = toc === 'full' ? 150 : 32
   const marginW = w >= 960 ? (w >= 1240 ? 300 : 260) : 0
-  const gap = w >= 1240 ? 48 : 32
-  const paperW = Math.max(420, Math.min(760, w - tocW - marginW - gap * 2 - 48))
+  const gap = w >= 1240 ? 48 : w >= 760 ? 32 : 16
+  // 分屏对照时正文区可能只有 500px 左右：收窄边距，正文列最少 300px
+  const paperW = Math.max(300, Math.min(760, w - tocW - marginW - gap * 2 - (w >= 760 ? 48 : 20)))
   return { toc, tocW, marginW, paperW, gap }
 }
 
@@ -206,6 +207,7 @@ export function PaperEditor({ docId }: { docId: string }) {
   )
   const cards = useMemo(() => notes.filter((n) => n.card), [notes])
   cardsRef.current = cards
+  const activeGroup = useMemo(() => groupNotes(cards).find((g) => g.notes.some((n) => n.key === active)) ?? null, [cards, active])
   const activeRef = useRef(active)
   activeRef.current = active
 
@@ -310,7 +312,7 @@ export function PaperEditor({ docId }: { docId: string }) {
       <Box ref={setScrollEl} sx={{ flex: 1, overflow: 'auto' }} className="editor-scroll">
         <Box
           sx={{
-            display: 'grid', justifyContent: 'center', columnGap: `${cols.gap}px`, px: 3,
+            display: 'grid', justifyContent: 'center', columnGap: `${cols.gap}px`, px: cols.gap >= 32 ? 3 : 1,
             gridTemplateColumns: [cols.tocW ? `${cols.tocW}px` : null, `${cols.paperW}px`, cols.marginW ? `${cols.marginW}px` : null]
               .filter(Boolean)
               .join(' '),
@@ -368,7 +370,7 @@ export function PaperEditor({ docId }: { docId: string }) {
                   sx={{ fontSize: 11.5, color: cards.length ? brand.ink : brand.faint, cursor: !cols.marginW && drawerOpen ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
                 >
                   {allNotes.some((n) => n.card) ? `页边建议 ${cards.length}` : '页边暂无建议'}
-                  {!cols.marginW && cards.length ? '（空间不足，已隐藏）' : ''}
+                  {!cols.marginW && cards.length ? '（页边放不下：点正文里的标记查看）' : ''}
                 </Typography>
               </Tooltip>
             )}
@@ -403,6 +405,29 @@ export function PaperEditor({ docId }: { docId: string }) {
         <SaveBadge state={saveState} />
       </Box>
       <SelectionAssist editor={editor} />
+      {/* 页边放不下批注时（比如分屏对照）：正文里只留标记，点标记或光标进入那句话，批注浮在句子下方 */}
+      {!cols.marginW && activeGroup && (
+        <Popper
+          open
+          placement="bottom-start"
+          anchorEl={{
+            // contextElement：让 Popper 跟着正文的滚动容器一起滚
+            contextElement: editor.view.dom,
+            getBoundingClientRect: () => {
+              try {
+                const a = editor.view.coordsAtPos(activeGroup.from)
+                return new DOMRect(a.left, a.top, 1, a.bottom - a.top)
+              } catch {
+                return new DOMRect(0, 0, 0, 0)
+              }
+            },
+          }}
+          modifiers={[{ name: 'offset', options: { offset: [0, 6] } }, { name: 'preventOverflow', options: { padding: 12 } }]}
+          sx={{ zIndex: 20, width: 340 }}
+        >
+          <NoteGroupCard editor={editor} notes={activeGroup.notes} onClose={() => setActive(null)} onHover={setHover} onDismiss={rv.dismiss} />
+        </Popper>
+      )}
     </Box>
   )
 }
