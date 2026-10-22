@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Iterator
+from contextlib import closing
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from langgraph.types import Command
@@ -10,8 +11,8 @@ from pydantic import BaseModel, Field
 from ..agent.graph import get_graph
 from ..agent.critic import get_critic
 from ..agent.writer import get_writer
+from ..agent.runtime import AgentRun, active, release, reserve
 from ..db import get_conn
-from .sse import sse_response
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
@@ -107,36 +108,70 @@ def _result(values: dict) -> dict:
         keys = ("round", "max_rounds", "summary", "verdict", "scores", "issues", "resolved", "history", "errors")
         return {k: values.get(k) for k in keys} | {"kind": "critique"}
     if "drafts" in values:  # 分节写作
-        keys = ("topic", "outline", "drafts", "mode", "order", "polish", "edits", "polish_summary", "errors")
+        keys = ("topic", "outline", "drafts", "mode", "order", "polish", "polish_done", "edits", "polish_summary", "errors")
         return {k: values.get(k) for k in keys} | {"kind": "write"}
     return {k: values.get(k) for k in ("topic", "outline", "synthesis", "notes", "paper_ids", "errors")} | {"kind": "review"}
 
 
-def _run(tid: str, payload: Any) -> Iterator[dict]:
-    graph = _graph_for(tid)
+def _run(run: AgentRun, graph: Any, payload: Any) -> None:
+    tid = run.tid
     config = {"configurable": {"thread_id": tid}}
-    _set_status(tid, "running")
-    yield {"type": "status", "status": "running", "thread_id": tid}
     try:
-        for mode, chunk in graph.stream(payload, config, stream_mode=["updates", "custom"]):
-            if mode == "custom":
-                yield {"type": "progress", **chunk}
-                continue
-            for node, update in chunk.items():
-                if node == "__interrupt__":
-                    yield {"type": "interrupt", "value": update[0].value}
-                else:
-                    yield {"type": "node", "node": node, "label": NODE_LABELS.get(node, node)}
-        snap = graph.get_state(config)
-        if snap.next:
-            _set_status(tid, "waiting")
-            yield {"type": "status", "status": "waiting"}
-        else:
-            _set_status(tid, "done")
-            yield {"type": "done", "result": _result(snap.values)}
+        _set_status(tid, "running")
+        run.emit({"type": "status", "status": "running", "thread_id": tid})
+        while True:
+            # Fully drain one superstep before considering cancellation. This
+            # persists completed work, including parallel nodes, and closes the
+            # iterator on its owner thread rather than during SSE finalization.
+            with closing(graph.stream(payload, config, stream_mode=["updates", "custom"],
+                                      interrupt_after="*", durability="sync")) as stream:
+                for mode, chunk in stream:
+                    if mode == "custom":
+                        run.emit({"type": "progress", **chunk})
+                        continue
+                    for node, update in chunk.items():
+                        if node == "__interrupt__":
+                            if update:  # static checkpoint boundaries have no user input
+                                run.emit({"type": "interrupt", "value": update[0].value})
+                        else:
+                            run.emit({"type": "node", "node": node, "label": NODE_LABELS.get(node, node)})
+            snap = graph.get_state(config)
+            if not snap.next:
+                _set_status(tid, "done")
+                run.emit({"type": "done", "result": _result(snap.values)})
+                return
+            if any(task.interrupts for task in snap.tasks):
+                _set_status(tid, "waiting")
+                run.emit({"type": "status", "status": "waiting"})
+                return
+            if run.stop_requested.is_set():
+                _set_status(tid, "stopped")
+                run.emit({"type": "status", "status": "stopped"})
+                return
+            payload = None
     except Exception as e:  # noqa: BLE001
         _set_status(tid, "error")
-        yield {"type": "error", "message": f"{type(e).__name__}: {e}"}
+        run.emit({"type": "error", "message": f"{type(e).__name__}: {e}"})
+
+
+def _response(tid: str, payload: Any = None, *, resuming: bool = False):
+    run = reserve(tid)  # reserve before inspecting the checkpoint (no resume race)
+    try:
+        graph = _graph_for(tid)
+        if resuming:
+            snap = graph.get_state({"configurable": {"thread_id": tid}})
+            if not snap.next:
+                raise HTTPException(409, "该任务没有在等待输入")
+            waiting = any(task.interrupts for task in snap.tasks)
+            if waiting and not payload:
+                raise HTTPException(409, "任务在等你确认，请先在卡片上做出选择")
+            payload = Command(resume=payload) if waiting else None
+        response = run.response()
+        run.start(lambda worker: _run(worker, graph, payload))
+        return response
+    except BaseException:
+        release(run)
+        raise
 
 
 @router.post("/start")
@@ -145,7 +180,7 @@ def start(body: StartIn):
     with get_conn() as conn:
         conn.execute("INSERT INTO agent_threads (thread_id, doc_id, topic) VALUES (?,?,?)", (tid, body.doc_id, body.topic))
     state = body.model_dump(exclude={"doc_id"})
-    return sse_response(_run(tid, state))
+    return _response(tid, state)
 
 
 @router.post("/write")
@@ -162,7 +197,7 @@ def write(body: WriteIn):
     state = body.model_dump(exclude={"doc_id"}) | {"selected": picked}
     state["mode"] = body.mode if body.mode in ("auto", "parallel") else "confirm"
     state["length"] = body.length if body.length in ("short", "medium", "long") else "medium"
-    return sse_response(_run(tid, state))
+    return _response(tid, state)
 
 
 @router.post("/critique")
@@ -176,28 +211,23 @@ def critique(body: CritiqueIn):
         conn.execute("INSERT INTO agent_threads (thread_id, doc_id, topic, kind) VALUES (?,?,?,?)",
                      (tid, body.doc_id, f"审稿：{body.doc_title or '未命名论文'}", "critique"))
     state = body.model_dump(exclude={"doc_id"}) | {"sections": sections, "round": 0}
-    return sse_response(_run(tid, state))
+    return _response(tid, state)
 
 
 @router.post("/{tid}/resume")
 def resume(tid: str, body: ResumeIn):
-    graph = _graph_for(tid)
-    snap = graph.get_state({"configurable": {"thread_id": tid}})
-    if not snap.next:
-        raise HTTPException(409, "该任务没有在等待输入")
-    waiting = any(t.interrupts for t in snap.tasks)
-    if waiting and not body.value:
-        raise HTTPException(409, "任务在等你确认，请先在卡片上做出选择")
-    # 没有在等输入、但还有没跑完的节点（中途被停止）：从上次的检查点接着跑
-    return sse_response(_run(tid, Command(resume=body.value) if waiting else None))
+    return _response(tid, body.value, resuming=True)
 
 
 @router.post("/{tid}/stop")
 def stop(tid: str):
-    """前端断开流之后调用：标记为已停止（图会在当前步骤结束后不再继续），之后可以从检查点继续"""
-    with get_conn() as conn:  # 只有正在跑的任务才标记为停止；等你确认的保持原状
+    """请求在当前图步骤保存后停止；执行释放之前仍禁止恢复。"""
+    if run := active(tid):
+        run.stop_requested.set()
+        return {"ok": True, "stopping": True}
+    with get_conn() as conn:
         conn.execute("UPDATE agent_threads SET status='stopped', updated_at=datetime('now') WHERE thread_id=? AND status='running'", (tid,))
-    return {"ok": True}
+    return {"ok": True, "stopping": False}
 
 
 @router.get("")
@@ -229,6 +259,7 @@ def get_thread(tid: str):
         "thread_id": tid,
         "kind": row["kind"] if row else "review",
         "status": row["status"] if row else ("waiting" if pending else "done"),
+        "stopping": bool((run := active(tid)) and run.stop_requested.is_set()),
         "interrupt": pending,
         "result": _result(snap.values),
     }

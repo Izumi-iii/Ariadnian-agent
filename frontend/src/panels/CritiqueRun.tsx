@@ -91,7 +91,7 @@ export function CritiqueRun({
 }) {
   const { docId, docTitle, editor, alertAgent, notify } = useApp()
   const v = useCritique()
-  const { run, stop, running } = useAgentStream()
+  const { run, stop, running, stopping } = useAgentStream()
   const [status, setStatus] = useState<Status>(restoreId ? 'running' : 'setup')
   const [threadId, setThreadIdState] = useState<string | null>(restoreId ?? null)
   const tidRef = useRef<string | null>(restoreId ?? null)
@@ -219,8 +219,8 @@ export function CritiqueRun({
               审稿 Agent{v.round > 0 && ` · 第 ${v.round}/${v.maxRounds} 轮`}
             </Typography>
             {running ? (
-              <Button size="small" startIcon={<StopCircleOutlinedIcon />} onClick={() => stop(threadId)} sx={{ color: brand.red, py: 0, minHeight: 24, fontSize: 12 }}>
-                停止
+              <Button size="small" disabled={stopping} startIcon={<StopCircleOutlinedIcon />} onClick={() => stop(threadId)} sx={{ color: brand.red, py: 0, minHeight: 24, fontSize: 12 }}>
+                {stopping ? '正在保存并停止…' : '停止'}
               </Button>
             ) : (
               <Tooltip title="返回">

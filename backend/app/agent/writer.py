@@ -62,6 +62,7 @@ class WriterState(TypedDict, total=False):
     parts: Annotated[dict, _merge]  # 并行模式：各子 Agent 的结果 {"下标": draft}
     edits: list[dict]  # 总编的修改
     polish_summary: str
+    polish_done: bool
     action: str
     feedback: str
     errors: list[str]
@@ -281,7 +282,7 @@ def polish(state: WriterState) -> dict:
     drafts = [dict(d) for d in state.get("drafts") or []]
     items = [(i, d) for i, d in enumerate(drafts) if d.get("status") in ("accepted", "drafted") and d.get("paragraphs")]
     if not items:
-        return {}
+        return {"polish_done": True}
     zh = state.get("language", "zh") == "zh"
     _progress(f"总编 Agent：通读新写的 {len(items)} 节，检查衔接、重复和前后一致…", phase="polish")
     body = "\n\n".join(
@@ -335,7 +336,7 @@ def polish(state: WriterState) -> dict:
         _progress(f"总编 Agent：修改《{d['title']}》第 {j + 1} 段", phase="edit", **edit)
     summary = str(data.get("summary") or "").strip()
     _progress(f"总编 Agent：改了 {len(edits)} 处" if edits else "总编 Agent：通读完毕，没有需要修改的地方", phase="polished")
-    return {"drafts": drafts, "edits": edits, "polish_summary": summary}
+    return {"drafts": drafts, "edits": edits, "polish_summary": summary, "polish_done": True}
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +349,7 @@ def prepare(state: WriterState) -> dict:
     drafts = [{"title": s["title"], "status": "pending" if i in order else "excluded"} for i, s in enumerate(outline)]
     how = {"parallel": f"{len(order)} 个子 Agent 并行写", "auto": "连续写完"}.get(state.get("mode", ""), "逐节确认")
     _progress(f"共 {len(order)} 节，{how}" + ("，最后由总编统稿" if state.get("polish") else ""))
-    return {"order": order, "pos": 0, "index": order[0] if order else 0, "drafts": drafts, "errors": [], "parts": {}, "edits": []}
+    return {"order": order, "pos": 0, "index": order[0] if order else 0, "drafts": drafts, "errors": [], "parts": {}, "edits": [], "polish_done": False}
 
 
 def write_section(state: WriterState) -> dict:

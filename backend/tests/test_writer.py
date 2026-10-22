@@ -86,6 +86,7 @@ def test_write_confirm_mode(bibkey):
     # 刷新页面也能恢复
     st = client.get(f"/api/agent/{tid}").json()
     assert st["kind"] == "write" and st["interrupt"]["kind"] == "review_section"
+    assert st["result"]["polish_done"] is False
 
     # 按意见重写本节 → 仍停在第 1 节
     events = sse(client.post(f"/api/agent/{tid}/resume", json={"value": {"action": "regenerate", "feedback": "更简洁"}}))
@@ -137,6 +138,7 @@ def test_write_parallel_with_editor_pass(bibkey):
     assert edits and all(e["after"].startswith("承接上一节") and e["before"] != e["after"] for e in edits)
     result = events[-1]["result"]
     assert len(result["edits"]) == len(edits) and result["polish_summary"]
+    assert result["polish_done"] is True
     for e in edits:
         assert result["drafts"][e["section"]]["paragraphs"][e["para"]] == e["after"]
 
