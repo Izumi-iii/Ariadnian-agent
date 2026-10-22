@@ -32,6 +32,7 @@ class Paper(PaperIn):
     has_fulltext: bool = False
     has_pdf: bool = False  # data/pdfs 里有原文 PDF，可以在「原文」里阅读
     chunk_count: int = 0
+    parser: str | None = None  # 全文用哪个解析器解析的
     created_at: str | None = None
 
 

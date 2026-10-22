@@ -6,6 +6,7 @@ import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined'
 import EditNoteIcon from '@mui/icons-material/EditNote'
 import RateReviewOutlinedIcon from '@mui/icons-material/RateReviewOutlined'
 import { api } from '../lib/api'
+import { fmtTokens } from '../lib/runStats'
 import { brand } from '../theme'
 
 export interface ThreadInfo {
@@ -15,6 +16,7 @@ export interface ThreadInfo {
   kind?: 'review' | 'write' | 'critique'
   created_at: string
   updated_at?: string
+  tokens?: number | null
 }
 
 const STATUS: Record<string, [string, string]> = {
@@ -93,6 +95,11 @@ export function AgentHistory({ docId, onOpen, disabled }: { docId: string | null
                     <Typography component="span" sx={{ fontSize: 11.5, color: brand.faint }}>
                       {ago(t.updated_at || t.created_at)}
                     </Typography>
+                    {!!t.tokens && (
+                      <Typography component="span" sx={{ fontSize: 11.5, color: brand.faint }}>
+                        {fmtTokens(t.tokens)} tok
+                      </Typography>
+                    )}
                   </Box>
                 }
                 slotProps={{ primary: { noWrap: true, sx: { fontSize: 13 } } }}

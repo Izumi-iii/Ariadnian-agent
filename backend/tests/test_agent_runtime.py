@@ -26,6 +26,7 @@ from langgraph.graph import END, START, StateGraph
 from starlette.requests import ClientDisconnect
 
 from app.agent.runtime import active
+from app import runstats
 from app.routers import agent
 
 
@@ -163,6 +164,62 @@ def test_failure_releases_task_for_recovery(monkeypatch):
     tid = events[0]["thread_id"]
     assert events[-1] == {"type": "error", "message": "RuntimeError: node failed"}
     assert active(tid) is None
+
+
+def test_stop_resume_preserves_worker_model_usage_and_streamed_statistics(monkeypatch):
+    entered = threading.Event()
+    proceed = threading.Event()
+    monkeypatch.setattr(runstats, "context_window", lambda model: 8192)
+
+    def record_call():
+        meter = runstats.current()
+        assert meter is not None, "worker lost its task's model-usage context"
+        meter.record("test-model", ok=True, latency=1.0, first_token=0.1,
+                     prompt_tokens=10, completion_tokens=5, cached_tokens=2, cost=0.001)
+
+    def first(state):
+        record_call()
+        entered.set()
+        assert proceed.wait(10)
+        return {"count": 1}
+
+    def second(state):
+        record_call()
+        return {"count": state["count"] + 1}
+
+    builder = StateGraph(State)
+    builder.add_node("first", first)
+    builder.add_node("second", second)
+    builder.add_edge(START, "first")
+    builder.add_edge("first", "second")
+    builder.add_edge("second", END)
+    graph = builder.compile(checkpointer=InMemorySaver())
+    monkeypatch.setattr(agent, "_graph_for", lambda tid: graph)
+
+    async def drain(response):
+        return [json.loads(event.removeprefix("data: ")) async for event in response.body_iterator
+                if event.startswith("data: ")]
+
+    response = agent.start(agent.StartIn(topic="worker statistics regression"))
+    assert entered.wait(5)
+    try:
+        assert agent.stop(response.run.tid)["stopping"] is True
+    finally:
+        proceed.set()
+    events = asyncio.run(drain(response))
+    assert events[-1] == {"type": "status", "status": "stopped"}
+    first_stats = runstats.load(response.run.tid)
+    assert first_stats["calls"] == first_stats["steps"] == 1
+    assert first_stats["total_tokens"] == 15
+    assert [event["stats"] for event in events if event["type"] == "stats"][-1]["calls"] == 1
+
+    resumed = asyncio.run(drain(agent.resume(response.run.tid, agent.ResumeIn(value={}))))
+    assert resumed[-1]["type"] == "done"
+    final_stats = agent.get_thread(response.run.tid)["stats"]
+    assert final_stats["calls"] == final_stats["steps"] == 2
+    assert final_stats["total_tokens"] == 30
+    assert [event["stats"] for event in resumed if event["type"] == "stats"][-1]["calls"] == 2
+    assert next(row for row in agent.list_threads() if row["thread_id"] == response.run.tid)["tokens"] == 30
 
 
 @pytest.mark.parametrize("spec", ["2.3", "2.4"])

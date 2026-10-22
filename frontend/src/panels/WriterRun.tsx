@@ -237,7 +237,8 @@ export function WriterRun({
         if (r.drafts) setDrafts(r.drafts)
         setEdits((r.edits ?? []).map((e: Edit) => ({ ...e, applied: true })))
         setPolishSummary(r.polish_summary ?? '')
-        setPolishState(r.polish_done === true ? 'done' : 'idle')
+        // Older completed checkpoints predate the explicit completion flag.
+        setPolishState(r.polish_done === true || (r.polish_done == null && r.polish && st.status === 'done') ? 'done' : 'idle')
         setPolish(!!r.polish)
         if (r.mode) setMode(r.mode)
         setErrors(r.errors ?? [])

@@ -197,12 +197,21 @@ def index_abstract(paper_id: str, title: str, abstract: str | None) -> int:
     return store_chunks(paper_id, [Chunk(text, "Abstract", None)], fulltext=False)
 
 
-def index_pdf(paper_id: str, path: str | Path) -> int:
-    pages = extract_pdf_pages(path)
-    chunks = chunk_paragraphs(split_paragraphs(pages))
+def index_pdf(paper_id: str, path: str | Path, report: dict | None = None) -> int:
+    """解析全文并入库。解析器按设置选择（PyMuPDF / GROBID / MinerU），外部服务不可用时自动回退 PyMuPDF。"""
+    from .parsers import parse_pdf
+
+    paras, parser, note = parse_pdf(path)
+    if report is not None:
+        report.update(parser=parser, note=note)
+    chunks = chunk_paragraphs(paras)
     if not chunks:  # 扫描版 PDF 等
-        raise ValueError("没能从 PDF 中提取到文本（可能是扫描版，需要 OCR）")
-    return store_chunks(paper_id, chunks, fulltext=True)
+        hint = "（可能是扫描版：在设置里启用 MinerU 解析可以做 OCR）" if parser == "pymupdf" else ""
+        raise ValueError(f"没能从 PDF 中提取到文本{hint}")
+    n = store_chunks(paper_id, chunks, fulltext=True)
+    with get_conn() as conn:
+        conn.execute("UPDATE papers SET parser=? WHERE id=?", (parser, paper_id))
+    return n
 
 
 def guess_pdf_metadata(path: str | Path) -> dict:

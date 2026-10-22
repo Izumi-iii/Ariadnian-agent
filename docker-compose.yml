@@ -8,6 +8,10 @@
 #
 # 不想在服务器上构建，可以直接用 CI 发布的镜像：
 #   docker compose pull && docker compose up -d
+#
+# 可选：更好的 PDF 解析（在 deploy/ariadne.env 里设置 PDF_PARSER，见注释）
+#   docker compose --profile grobid up -d     # GROBID：英文论文的章节、段落、公式，CPU 即可，约 4GB 内存
+#   docker compose --profile mineru up -d     # MinerU：中文、扫描件 OCR、复杂版式，需要 NVIDIA GPU，镜像需先按 MinerU 文档构建
 name: ariadne
 
 services:
@@ -31,6 +35,32 @@ services:
     # 限制资源，防止一个人把服务器拖垮
     mem_limit: 2g
     cpus: 2
+
+  # ---- 可选：PDF 解析服务 ----
+  grobid:
+    # 只含 CRF 模型的轻量镜像（约 500MB），适合全文解析；国内可用 GROBID_IMAGE 换成镜像站地址
+    image: ${GROBID_IMAGE:-grobid/grobid:0.9.1-crf}
+    profiles: [grobid]
+    restart: unless-stopped
+    init: true
+    ulimits:
+      core: 0
+    mem_limit: 4g
+
+  mineru:
+    # MinerU 官方没有发布现成镜像：先按 https://github.com/opendatalab/MinerU 的 docker/ 目录构建（docker build -t mineru:latest ...）
+    image: ${MINERU_IMAGE:-mineru:latest}
+    profiles: [mineru]
+    restart: unless-stopped
+    command: mineru-api --host 0.0.0.0 --port 8000
+    shm_size: 8g
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   caddy:
     image: ${CADDY_IMAGE:-caddy:2}

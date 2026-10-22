@@ -6,6 +6,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type R
 import { Box, CircularProgress, IconButton, InputBase, Tooltip, Typography } from '@mui/material'
 import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
+import TocIcon from '@mui/icons-material/Toc'
 import RemoveIcon from '@mui/icons-material/Remove'
 import AddIcon from '@mui/icons-material/Add'
 import FitScreenOutlinedIcon from '@mui/icons-material/FitScreenOutlined'
@@ -65,11 +66,45 @@ export interface PdfViewerProps {
   renderSelectionMenu?: (sel: PdfSelection, close: () => void) => ReactNode
   onError?: (msg: string) => void
   onLoaded?: (pages: number) => void
+  /** 显示「目录」按钮（PDF 书签；没有书签时按页列出），宽屏时默认展开 */
+  toc?: boolean
+}
+
+interface TocItem {
+  title: string
+  page: number | null
+  depth: number
+}
+
+/** 读取 PDF 书签（目录），解析出每项对应的页码 */
+async function loadOutline(doc: PDFDocumentProxy): Promise<TocItem[]> {
+  const out: TocItem[] = []
+  const walk = async (items: any[] | null, depth: number) => {
+    for (const it of items ?? []) {
+      let page: number | null = null
+      try {
+        const dest = typeof it.dest === 'string' ? await doc.getDestination(it.dest) : it.dest
+        if (Array.isArray(dest) && dest[0]) page = (typeof dest[0] === 'number' ? dest[0] : await doc.getPageIndex(dest[0])) + 1
+      } catch {
+        /* 书签指向的目标解析不了：只显示标题 */
+      }
+      out.push({ title: String(it.title ?? '').trim(), page, depth })
+      if (depth < 2) await walk(it.items, depth + 1)
+    }
+  }
+  try {
+    await walk(await doc.getOutline(), 0)
+  } catch {
+    /* 没有目录 */
+  }
+  return out.filter((x) => x.title)
 }
 
 export function PdfViewer({
-  src, page, highlight, jumpKey, badge, onError, onLoaded, focus, marks, activeMark, onMarkClick, renderSelectionMenu,
+  src, page, highlight, jumpKey, badge, onError, onLoaded, focus, marks, activeMark, onMarkClick, renderSelectionMenu, toc,
 }: PdfViewerProps) {
+  const [showToc, setShowToc] = useState(false)
+  const [outline, setOutline] = useState<TocItem[] | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pageEls = useRef(new Map<number, HTMLDivElement>())
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null)
@@ -114,6 +149,7 @@ export function PdfViewer({
         setSizes(ss)
         setDoc(d)
         onLoaded?.(d.numPages)
+        if (toc) loadOutline(d).then((o) => !cancelled && setOutline(o))
       } catch (e: any) {
         if (cancelled) return
         const msg = String(e?.message ?? e)
@@ -263,6 +299,13 @@ export function PdfViewer({
     <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', bgcolor: '#ececec' }}>
       {/* 工具栏 */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, px: 0.75, height: 38, flexShrink: 0, bgcolor: '#fafafa', borderBottom: `1px solid ${brand.line}` }}>
+        {toc && (
+          <Tooltip title={showToc ? '收起目录' : '目录'}>
+            <IconButton aria-label="目录" onClick={() => setShowToc(!showToc)} sx={{ color: showToc ? brand.blue : undefined }}>
+              <TocIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
         <IconButton aria-label="上一页" onClick={() => go(current - 1)} disabled={current <= 1}>
           <NavigateBeforeIcon fontSize="small" />
         </IconButton>
@@ -305,6 +348,26 @@ export function PdfViewer({
         </Tooltip>
       </Box>
 
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+      {/* 目录：PDF 书签，没有书签时按页列出 */}
+      {toc && showToc && (
+        <Box sx={{ width: 190, flexShrink: 0, overflow: 'auto', bgcolor: '#fafafa', borderRight: `1px solid ${brand.line}`, py: 0.75 }}>
+          {(outline?.length ? outline : sizes.map((_, i) => ({ title: `第 ${i + 1} 页`, page: i + 1, depth: 0 }))).map((it, i) => (
+            <Box
+              key={i}
+              role="button"
+              onClick={() => it.page && go(it.page)}
+              sx={{
+                pl: 1.25 + it.depth * 1.25, pr: 1, py: 0.4, fontSize: it.depth ? 11.5 : 12, cursor: it.page ? 'pointer' : 'default', lineHeight: 1.45,
+                color: it.page && it.page <= current && (outline?.[i + 1]?.page ?? Infinity) > current ? brand.blue : it.depth ? brand.muted : brand.ink,
+                fontWeight: it.depth ? 400 : 500, '&:hover': { bgcolor: 'rgba(0,0,0,0.05)' },
+              }}
+            >
+              {it.title}
+            </Box>
+          ))}
+        </Box>
+      )}
       {/* 页面 */}
       <Box
         ref={scrollRef}
@@ -345,6 +408,7 @@ export function PdfViewer({
             {renderSelectionMenu(sel, closeSel)}
           </Box>
         )}
+      </Box>
       </Box>
     </Box>
   )

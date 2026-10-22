@@ -24,6 +24,12 @@ for pkg in ("litellm", "tiktoken"):
     binaries += b
     hiddenimports += h
 datas += collect_data_files("jieba")
+# Word 导出：引用格式（CSL）和版式模板，以及 pypandoc-binary 自带的 pandoc 可执行文件
+datas += [(str(ROOT / "backend" / "app" / "assets"), "app/assets")]
+d, b, h = collect_all("pypandoc")
+datas += d
+binaries += b
+hiddenimports += h
 
 a = Analysis(
     [str(ROOT / "desktop" / "server.py")],

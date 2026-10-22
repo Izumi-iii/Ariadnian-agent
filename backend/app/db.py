@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS papers (
     source        TEXT,
     citation_count INTEGER,
     has_fulltext  INTEGER NOT NULL DEFAULT 0,
+    parser        TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS chunks (
@@ -57,7 +58,8 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     completion_tokens INTEGER,
     cached_tokens     INTEGER,
     cost_usd          REAL,
-    error             TEXT
+    error             TEXT,
+    thread_id         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_llm_calls_tier ON llm_calls(tier, ts);
 CREATE TABLE IF NOT EXISTS search_cache (
@@ -83,6 +85,7 @@ CREATE TABLE IF NOT EXISTS agent_threads (
     topic       TEXT NOT NULL,
     kind        TEXT NOT NULL DEFAULT 'review',
     status      TEXT NOT NULL DEFAULT 'running',
+    stats       TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -115,10 +118,20 @@ def init_db() -> None:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(llm_calls)")}
         if "cached_tokens" not in cols:
             conn.execute("ALTER TABLE llm_calls ADD COLUMN cached_tokens INTEGER")
+        # 旧数据库补列：调用属于哪个 Agent 任务（运行统计、排查问题）
+        if "thread_id" not in cols:
+            conn.execute("ALTER TABLE llm_calls ADD COLUMN thread_id TEXT")
         # 旧数据库补列：Agent 任务类型（review=综述→大纲，write=分节写作）
         cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_threads)")}
         if "kind" not in cols:
             conn.execute("ALTER TABLE agent_threads ADD COLUMN kind TEXT NOT NULL DEFAULT 'review'")
+        # 旧数据库补列：Agent 运行统计（token、速度、缓存命中、上下文占用）
+        if "stats" not in cols:
+            conn.execute("ALTER TABLE agent_threads ADD COLUMN stats TEXT")
+        # 旧数据库补列：全文是哪个解析器解析的（pymupdf / grobid / mineru）
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(papers)")}
+        if "parser" not in cols:
+            conn.execute("ALTER TABLE papers ADD COLUMN parser TEXT")
         conn.commit()
         conn.close()
         _initialized = True

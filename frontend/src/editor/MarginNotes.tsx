@@ -193,6 +193,29 @@ function NoteCard({
   )
 }
 
+/** 展开的一组批注（页边栏里，或页边空间不够时浮在句子下方） */
+export function NoteGroupCard({
+  editor, notes, onClose, onHover, onDismiss, onAcceptRewrite, sx,
+}: {
+  editor: Editor
+  notes: PlacedAnnotation[]
+  onClose: () => void
+  onHover: (k: string | null) => void
+  onDismiss: (k: string) => void
+  onAcceptRewrite: (annotation: PlacedAnnotation) => void
+  sx?: object
+}) {
+  return (
+    <Box sx={{ borderRadius: '8px', boxShadow: shadow.lg, bgcolor: '#fff', transition: 'transform .15s', overflow: 'hidden', ...sx }}>
+      {notes.map((n, i) => (
+        <Box key={n.key} sx={{ borderTop: i ? `1px solid ${brand.lineSoft}` : 'none' }}>
+          <NoteCard a={n} editor={editor} first={i === 0} onClose={onClose} onHover={onHover} onDismiss={() => onDismiss(n.dismissKey ?? n.key)} onAcceptRewrite={onAcceptRewrite} />
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
 const COMPACT_H = 34
 /** 卡片离原句超过这个距离，就收进「还有 N 条」里，免得卡片漂到别的段落旁边 */
 const MAX_DRIFT = 220
@@ -350,13 +373,7 @@ export function MarginNotes({
             }}
           >
             {open ? (
-              <Box sx={{ borderRadius: '8px', boxShadow: shadow.lg, bgcolor: '#fff', transform: 'translateX(-4px)', transition: 'transform .15s' }}>
-                {g.notes.map((n, i) => (
-                  <Box key={n.key} sx={{ borderTop: i ? `1px solid ${brand.lineSoft}` : 'none' }}>
-                    <NoteCard a={n} editor={editor} first={i === 0} onClose={() => setActive(null)} onHover={onHover} onDismiss={() => onDismiss(n.dismissKey ?? n.key)} onAcceptRewrite={onAcceptRewrite} />
-                  </Box>
-                ))}
-              </Box>
+              <NoteGroupCard editor={editor} notes={g.notes} onClose={() => setActive(null)} onHover={onHover} onDismiss={onDismiss} onAcceptRewrite={onAcceptRewrite} sx={{ transform: 'translateX(-4px)' }} />
             ) : (
               <CompactCard g={g} handled={g.notes.every(isHandled)} onOpen={() => setActive(g.notes[0].key)} onHover={onHover} />
             )}

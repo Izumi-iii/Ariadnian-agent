@@ -145,11 +145,40 @@ export function citedIds(doc: JSONContent): string[] {
   })
 }
 
-export function download(filename: string, text: string, mime = 'text/plain') {
-  const blob = new Blob([text], { type: `${mime};charset=utf-8` })
+export function download(filename: string, text: string | Blob, mime = 'text/plain') {
+  const blob = typeof text === 'string' ? new Blob([text], { type: `${mime};charset=utf-8` }) : text
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = filename
   a.click()
   setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+
+// ------------------------------------------------------------------ Word（后端 pandoc + citeproc）
+export type DocxStyle = 'gbt-numeric' | 'gbt-author-date' | 'apa'
+
+/** 编辑器里的引用样式 → Word 的参考文献格式：顺序编码用 GB/T 7714；作者-年份中文用 GB/T 7714 著者-出版年，英文用 APA */
+export function docxStyleFor(citeStyle: string, doc: JSONContent): DocxStyle {
+  if (citeStyle === 'numeric') return 'gbt-numeric'
+  const text = JSON.stringify(doc)
+  const cjk = (text.match(/[\u4e00-\u9fff]/g) ?? []).length
+  return cjk > 50 ? 'gbt-author-date' : 'apa'
+}
+
+export async function exportDocx(doc: JSONContent, title: string, style: DocxStyle): Promise<Blob> {
+  const res = await fetch('/api/export/docx', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ markdown: toMarkdown(doc, title), title, paper_ids: citedIds(doc), style }),
+  })
+  if (!res.ok) {
+    let msg = `${res.status} ${res.statusText}`
+    try {
+      msg = (await res.json()).detail ?? msg
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`Word 导出失败：${msg}`)
+  }
+  return res.blob()
 }

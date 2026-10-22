@@ -91,6 +91,10 @@ def write_settings(body: SettingsIn):
                 except Exception:
                     raise HTTPException(400, '自定义价格格式不对：应为 {"模型名": {"input": 2, "cached": 0.2, "output": 8}}，单位 元/百万 tokens') from None
                 v = json.dumps(data, ensure_ascii=False)
+            if k == "PDF_PARSER" and v not in ("pymupdf", "grobid", "mineru"):
+                raise HTTPException(400, "PDF 解析器只能是 pymupdf / grobid / mineru")
+            if k in ("GROBID_URL", "MINERU_URL") and not v.startswith(("http://", "https://")):
+                raise HTTPException(400, f"{k} 需要以 http:// 或 https:// 开头")
             if k == "LLM_FAKE":
                 v = "1" if v.lower() in {"1", "true", "yes", "on"} else "0"
         changes[k] = v
@@ -132,3 +136,19 @@ def test_search(body: TestSearchIn):
     if get_settings().llm_fake:
         return {"ok": True, "fake": True, "latency_ms": 0, "sample": "离线演示模式下不会真正请求", "authenticated": False}
     return scholar.test_source(body.source)
+
+
+class TestParserIn(BaseModel):
+    parser: str  # grobid / mineru，使用已保存的地址
+
+
+@router.post("/test-parser")
+def test_parser(body: TestParserIn):
+    from ..parsers import test_parser as probe
+
+    s = get_settings()
+    if body.parser == "grobid":
+        return probe("grobid", s.grobid_url or "")
+    if body.parser == "mineru":
+        return probe("mineru", s.mineru_url or "")
+    raise HTTPException(400, "未知解析器")

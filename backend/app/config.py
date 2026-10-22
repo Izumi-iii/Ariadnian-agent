@@ -50,6 +50,7 @@ OVERRIDABLE_KEYS = {
     "EMBEDDING_PROVIDER", "EMBEDDING_MODEL", "EMBEDDING_BASE_URL", "EMBEDDING_API_KEY",
     "SEMANTIC_SCHOLAR_API_KEY", "OPENALEX_API_KEY", "SEARCH_CACHE_DAYS", "SEARCH_SOURCES",
     "MODEL_PRICES",  # 自定义模型价格（JSON，元 / 百万 tokens）
+    "PDF_PARSER", "GROBID_URL", "MINERU_URL", "MINERU_BACKEND",  # PDF 全文解析器
 }
 
 # 网页里把某项「明确设为空」（例如 DeepSeek 不需要自定义地址），避免回退到 .env 里的旧值
@@ -154,6 +155,11 @@ class Settings:
     data_dir: Path
     cors_origins: list[str]
 
+    pdf_parser: str = "pymupdf"  # pymupdf | grobid | mineru
+    grobid_url: str | None = None
+    mineru_url: str | None = None
+    mineru_backend: str = "pipeline"
+
     @property
     def llm_ready(self) -> bool:
         if self.llm_fake:
@@ -207,4 +213,8 @@ def get_settings() -> Settings:
         or ["semantic_scholar", "arxiv"],
         data_dir=data_dir(),
         cors_origins=(_env("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173") or "").split(","),
+        pdf_parser=(_env("PDF_PARSER", "pymupdf") or "pymupdf").lower(),
+        grobid_url=_env("GROBID_URL", "http://localhost:8070"),
+        mineru_url=_env("MINERU_URL", "http://localhost:8001"),
+        mineru_backend=_env("MINERU_BACKEND", "pipeline") or "pipeline",
     )

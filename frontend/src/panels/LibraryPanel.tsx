@@ -21,6 +21,9 @@ import { useApp } from '../lib/appContext'
 import { normalizeTitle } from '../lib/util'
 import type { Paper, PaperIn } from '../lib/types'
 import { brand } from '../theme'
+import AutorenewIcon from '@mui/icons-material/Autorenew'
+
+const PARSER_LABEL: Record<string, string> = { grobid: 'GROBID', mineru: 'MinerU', pymupdf: 'PyMuPDF' }
 
 function meta(p: PaperIn) {
   const a = p.authors ?? []
@@ -182,9 +185,11 @@ function PaperItem({ p }: { p: Paper }) {
     setAnchor(null)
     setBusy(true)
     try {
-      await fn()
+      const r = await fn()
       await refreshPapers()
-      if (ok) notify(ok, 'success')
+      // 外部解析器不可用、退回了 PyMuPDF：告诉用户原因
+      if (r?.note) notify(`${ok ?? '完成'}（${r.note}，已改用 PyMuPDF）`, 'warning')
+      else if (ok) notify(r?.parser && r.parser !== 'pymupdf' ? `${ok}（${PARSER_LABEL[r.parser] ?? r.parser}）` : ok, 'success')
     } catch (e: any) {
       notify(e.message, 'error')
     } finally {
@@ -210,6 +215,7 @@ function PaperItem({ p }: { p: Paper }) {
               >
                 {p.has_fulltext ? `全文 · ${p.chunk_count} 段` : '仅摘要'}
                 {p.has_pdf ? ' · PDF' : ''}
+                {p.has_fulltext && p.parser && p.parser !== 'pymupdf' ? ` · ${PARSER_LABEL[p.parser] ?? p.parser}` : ''}
               </Box>
               <Typography sx={{ fontFamily: 'Roboto Mono', fontSize: 10.5, color: brand.faint }}>{p.bibkey}</Typography>
               {busy && <CircularProgress size={10} />}
@@ -261,6 +267,12 @@ function PaperItem({ p }: { p: Paper }) {
             <CloudDownloadOutlinedIcon fontSize="small" />
           </ListItemIcon>
           下载开放获取全文
+        </MenuItem>
+        <MenuItem disabled={!p.has_pdf} onClick={() => act(() => api.reparse(p.id), '已重新解析')}>
+          <ListItemIcon>
+            <AutorenewIcon fontSize="small" />
+          </ListItemIcon>
+          用当前解析器重新解析
         </MenuItem>
         <MenuItem onClick={() => { setAnchor(null); fileRef.current?.click() }}>
           <ListItemIcon>

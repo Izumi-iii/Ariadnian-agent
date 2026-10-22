@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import time
 import uuid
 from contextlib import closing
 from typing import Any
@@ -12,6 +14,7 @@ from ..agent.graph import get_graph
 from ..agent.critic import get_critic
 from ..agent.writer import get_writer
 from ..agent.runtime import AgentRun, active, release, reserve
+from .. import runstats
 from ..db import get_conn
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -116,42 +119,63 @@ def _result(values: dict) -> dict:
 def _run(run: AgentRun, graph: Any, payload: Any) -> None:
     tid = run.tid
     config = {"configurable": {"thread_id": tid}}
+    meter = runstats.RunMeter(tid, runstats.load(tid))
+    last = [time.perf_counter(), meter.version]
+
+    def tick(force: bool = False) -> dict | None:
+        now = time.perf_counter()
+        if force or (meter.version != last[1] and now - last[0] >= 0.5):
+            last[0], last[1] = now, meter.version
+            return {"type": "stats", "stats": meter.snapshot()}
+        return None
+
     try:
         _set_status(tid, "running")
         run.emit({"type": "status", "status": "running", "thread_id": tid})
+        run.emit(tick(force=True))
         while True:
             # Fully drain one superstep before considering cancellation. This
             # persists completed work, including parallel nodes, and closes the
             # iterator on its owner thread rather than during SSE finalization.
             with closing(graph.stream(payload, config, stream_mode=["updates", "custom"],
                                       interrupt_after="*", durability="sync")) as stream:
-                for mode, chunk in stream:
+                for mode, chunk in runstats.bind(meter, stream):
                     if mode == "custom":
                         run.emit({"type": "progress", **chunk})
-                        continue
-                    for node, update in chunk.items():
-                        if node == "__interrupt__":
-                            if update:  # static checkpoint boundaries have no user input
-                                run.emit({"type": "interrupt", "value": update[0].value})
-                        else:
-                            run.emit({"type": "node", "node": node, "label": NODE_LABELS.get(node, node)})
+                    else:
+                        for node, update in chunk.items():
+                            if node == "__interrupt__":
+                                if update:  # static checkpoint boundaries have no user input
+                                    run.emit({"type": "interrupt", "value": update[0].value})
+                            else:
+                                meter.step()
+                                run.emit({"type": "node", "node": node, "label": NODE_LABELS.get(node, node)})
+                    if (event := tick()) is not None:
+                        run.emit(event)
             snap = graph.get_state(config)
             if not snap.next:
-                _set_status(tid, "done")
-                run.emit({"type": "done", "result": _result(snap.values)})
-                return
-            if any(task.interrupts for task in snap.tasks):
-                _set_status(tid, "waiting")
-                run.emit({"type": "status", "status": "waiting"})
-                return
-            if run.stop_requested.is_set():
-                _set_status(tid, "stopped")
-                run.emit({"type": "status", "status": "stopped"})
-                return
-            payload = None
+                status = "done"
+            elif any(task.interrupts for task in snap.tasks):
+                status = "waiting"
+            elif run.stop_requested.is_set():
+                status = "stopped"
+            else:
+                payload = None
+                continue
+            meter.stop_clock()
+            run.emit(tick(force=True))
+            _set_status(tid, status)
+            run.emit({"type": "done", "result": _result(snap.values)} if status == "done"
+                     else {"type": "status", "status": status})
+            return
     except Exception as e:  # noqa: BLE001
+        meter.stop_clock()
+        run.emit(tick(force=True))
         _set_status(tid, "error")
         run.emit({"type": "error", "message": f"{type(e).__name__}: {e}"})
+    finally:
+        meter.stop_clock()
+        runstats.save(meter)
 
 
 def _response(tid: str, payload: Any = None, *, resuming: bool = False):
@@ -239,7 +263,19 @@ def list_threads(doc_id: str | None = None):
             ).fetchall()
         else:
             rows = conn.execute("SELECT * FROM agent_threads ORDER BY created_at DESC LIMIT 20").fetchall()
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r)
+        st = json.loads(d.pop("stats") or "null") if d.get("stats") else None
+        d["tokens"] = (st or {}).get("total_tokens")  # 历史列表只需要总量
+        out.append(d)
+    return out
+
+
+@router.get("/{tid}/stats")
+def thread_stats(tid: str):
+    """任务的运行统计（历史任务回看时用）；没有记录时返回 null"""
+    return runstats.load(tid)
 
 
 @router.get("/{tid}")
@@ -256,6 +292,7 @@ def get_thread(tid: str):
     with get_conn() as conn:
         row = conn.execute("SELECT status, kind FROM agent_threads WHERE thread_id=?", (tid,)).fetchone()
     return {
+        "stats": runstats.load(tid),
         "thread_id": tid,
         "kind": row["kind"] if row else "review",
         "status": row["status"] if row else ("waiting" if pending else "done"),

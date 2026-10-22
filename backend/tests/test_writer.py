@@ -145,3 +145,47 @@ def test_write_parallel_with_editor_pass(bibkey):
 
 def test_write_validates_outline():
     assert client.post("/api/agent/write", json={"outline": []}).status_code == 422
+
+
+def test_run_stats_cover_parallel_sub_agents(bibkey):
+    """运行统计：子 Agent 并行写作的调用也计入同一个任务；随 SSE 推送，并保存下来供历史回看"""
+    events = sse(client.post("/api/agent/write", json={"outline": _outline(bibkey), "mode": "parallel", "polish": True}))
+    tid = events[0]["thread_id"]
+    stats = [e["stats"] for e in events if e["type"] == "stats"]
+    assert stats[0]["calls"] == 0  # 开始时先推一次
+    last = stats[-1]
+    nodes = sum(1 for e in events if e["type"] == "node")
+    assert last["steps"] == nodes
+    # 三个子 Agent 各至少一次流式写作调用，加上总编
+    assert last["calls"] >= 4 and last["completion_tokens"] > 0 and last["prompt_tokens"] > 0
+    assert last["total_tokens"] == last["prompt_tokens"] + last["completion_tokens"]
+    assert last["context"]["used"] > 0 and last["peak_context"]["used"] >= last["context"]["used"]
+    saved = client.get(f"/api/agent/{tid}/stats").json()
+    assert saved["calls"] == last["calls"] and saved["steps"] == last["steps"]
+    assert client.get(f"/api/agent/{tid}").json()["stats"]["calls"] == last["calls"]
+
+
+def test_run_stats_accumulate_across_resume(bibkey):
+    events = sse(client.post("/api/agent/write", json={"outline": _outline(bibkey), "mode": "confirm"}))
+    tid = events[0]["thread_id"]
+    first = [e["stats"] for e in events if e["type"] == "stats"][-1]
+    assert first["calls"] > 0
+    events = sse(client.post(f"/api/agent/{tid}/resume", json={"value": {"action": "accept"}}))
+    stats = [e["stats"] for e in events if e["type"] == "stats"]
+    assert stats[0]["calls"] == first["calls"]  # 继续时从上次的统计接着算
+    assert stats[-1]["calls"] > first["calls"] and stats[-1]["steps"] > first["steps"]
+
+
+def test_meter_cache_and_context_math():
+    from app.runstats import RunMeter
+
+    m = RunMeter("t")
+    m.record("gpt-4o", ok=True, latency=2.0, first_token=1.0, prompt_tokens=1000, completion_tokens=100, cached_tokens=800, cost=0.01)
+    m.record("gpt-4o", ok=True, latency=1.0, first_token=None, prompt_tokens=2000, completion_tokens=0, cached_tokens=None, cost=None)
+    m.record("gpt-4o", ok=False, latency=0.1, first_token=None, prompt_tokens=None, completion_tokens=None, cached_tokens=None, cost=None)
+    s = m.snapshot()
+    assert s["calls"] == 3 and s["failed"] == 1
+    assert s["cache_hit"] == 0.8  # 没返回缓存字段的调用不计入分母
+    assert s["tok_s"] == 100.0  # 100 token / (2s - 1s 首 token)
+    assert s["context"]["used"] == 2000 and s["peak_context"]["used"] == 2000
+    assert s["context"]["max"] and s["context"]["max"] >= 100_000

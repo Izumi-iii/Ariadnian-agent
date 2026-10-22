@@ -95,10 +95,11 @@ async def papers_upload(file: UploadFile = File(...), paper_id: str | None = For
         else:
             meta = guess_pdf_metadata(tmp_path) if suffix == ".pdf" else {"title": Path(name).stem, "authors": []}
             paper, _ = add_paper(PaperIn(title=meta["title"], authors=meta["authors"], source="upload"))
+        info: dict = {}
         if suffix == ".pdf":
             dest = pdf_dir / f"{paper.id}.pdf"
             shutil.copy(tmp_path, dest)
-            n = index_pdf(paper.id, dest)
+            n = index_pdf(paper.id, dest, info)
         else:
             text = tmp_path.read_text(encoding="utf-8", errors="ignore")
             n = store_chunks(paper.id, chunk_plain_text(text), fulltext=True)
@@ -106,7 +107,23 @@ async def papers_upload(file: UploadFile = File(...), paper_id: str | None = For
         raise HTTPException(422, str(e)) from e
     finally:
         tmp_path.unlink(missing_ok=True)
-    return {"paper": get_paper(paper.id), "chunks": n}
+    return {"paper": get_paper(paper.id), "chunks": n, **info}
+
+
+@router.post("/{pid}/reparse")
+def papers_reparse(pid: str):
+    """用当前设置的解析器重新解析已下载的原文（更换解析器后用）"""
+    if not get_paper(pid):
+        raise HTTPException(404, "文献不存在")
+    path = pdfview.library_pdf(pid)
+    if not path:
+        raise HTTPException(400, "这篇文献还没有原文 PDF，先下载或上传全文")
+    info: dict = {}
+    try:
+        n = index_pdf(pid, path, info)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"paper": get_paper(pid), "chunks": n, **info}
 
 
 @router.post("/{pid}/fulltext")
@@ -118,9 +135,10 @@ def papers_fetch_fulltext(pid: str):
         raise HTTPException(400, "这篇文献没有开放获取的 PDF 链接，可以手动上传")
     try:
         path = pdfview.fetch_into_library(pid, paper.pdf_url)
-        n = index_pdf(pid, path)
+        info: dict = {}
+        n = index_pdf(pid, path, info)
     except UnsafeURL as e:
         raise HTTPException(400, str(e)) from e
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"下载或解析失败：{e}") from e
-    return {"paper": get_paper(pid), "chunks": n}
+    return {"paper": get_paper(pid), "chunks": n, **info}

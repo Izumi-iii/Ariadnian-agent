@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, streamSSE } from './api'
+import { runStats } from './runStats'
 
 /**
  * Agent 的 SSE 流：可以中途停止。
@@ -17,11 +18,13 @@ export function useAgentStream() {
     ctrl.current = c
     setRunning(true)
     setStopping(false)
+    runStats.setRunning(true)
     try {
       let stopped = false
       await streamSSE(path, body, (event) => {
+        runStats.onEvent(event)
         if (event.type === 'status' && event.status === 'stopped') stopped = true
-        onEvent(event)
+        if (event?.type !== 'stats') onEvent(event)
       }, c.signal)
       return stopped ? 'stopped' : 'ok'
     } catch (e: any) {
@@ -32,6 +35,7 @@ export function useAgentStream() {
         ctrl.current = null
         setRunning(false)
         setStopping(false)
+        runStats.setRunning(false)
       }
     }
   }, [])
