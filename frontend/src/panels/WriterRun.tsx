@@ -161,7 +161,7 @@ export function WriterRun({
   onExit: () => void
 }) {
   const { docId, docTitle, editor, notify, alertAgent } = useApp()
-  const { run: runStream, stop, running } = useAgentStream()
+  const { run: runStream, stop, running, stopping } = useAgentStream()
   const outline = useMemo(() => start?.outline ?? [], [start])
   // 已有正文的章节默认不选，免得重复写
   const [selected, setSelected] = useState<number[]>(() =>
@@ -237,7 +237,8 @@ export function WriterRun({
         if (r.drafts) setDrafts(r.drafts)
         setEdits((r.edits ?? []).map((e: Edit) => ({ ...e, applied: true })))
         setPolishSummary(r.polish_summary ?? '')
-        if (r.polish && (r.edits || st.status === 'done')) setPolishState('done')
+        // Older completed checkpoints predate the explicit completion flag.
+        setPolishState(r.polish_done === true || (r.polish_done == null && r.polish && st.status === 'done') ? 'done' : 'idle')
         setPolish(!!r.polish)
         if (r.mode) setMode(r.mode)
         setErrors(r.errors ?? [])
@@ -340,6 +341,7 @@ export function WriterRun({
           setDrafts((ds) => e.result.drafts.map((d: SectionDraft, j: number) => (ds[j]?.status === 'accepted' || ds[j]?.status === 'skipped' ? { ...d, status: ds[j].status } : d)))
         setErrors(e.result?.errors ?? [])
         setPolishSummary(e.result?.polish_summary ?? '')
+        setPolishState(e.result?.polish_done === true ? 'done' : 'idle')
         alertAgent('分节写作完成')
       } else if (e.type === 'error') {
         setStatus('error')
@@ -478,8 +480,8 @@ export function WriterRun({
               </Tooltip>
             )}
             {running ? (
-              <Button size="small" startIcon={<StopCircleOutlinedIcon />} onClick={() => stop(threadId)} sx={{ color: brand.red, py: 0, minHeight: 24, fontSize: 12 }}>
-                停止
+              <Button size="small" disabled={stopping} startIcon={<StopCircleOutlinedIcon />} onClick={() => stop(threadId)} sx={{ color: brand.red, py: 0, minHeight: 24, fontSize: 12 }}>
+                {stopping ? '正在保存并停止…' : '停止'}
               </Button>
             ) : (
               <Tooltip title="返回">

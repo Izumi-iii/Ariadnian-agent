@@ -1,8 +1,11 @@
 import type { Editor } from '@tiptap/core'
+import { closeHistory } from '@tiptap/pm/history'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import { citeStore } from './citations'
 import { paraKey, SEED_EVENT } from './writer'
+import { containingSentence, sentenceHasCitation } from './sentenceSpans'
+import { rememberProse, reviewDismissKey, rewriteTransaction, stableReviewAnnotations, stabilizeProse, textFingerprint, type ProseCache } from './reviewPolicy'
 
 /** 后端 /api/assist/annotate 返回的批注 */
 export interface CiteItem {
@@ -43,6 +46,7 @@ export type PlacedAnnotation = Annotation & {
   citePos: { pos: number; verdict: string }[]
   /** 是否需要在页边显示卡片（全部「支持」的引用核查只标记，不出卡片） */
   card: boolean
+  dismissKey?: string
 }
 
 interface Para {
@@ -52,15 +56,6 @@ interface Para {
   map: number[] // plain 下标 → 文档位置
   cites: { pos: number; ids: string[]; plainIdx: number }[]
   hash: string
-}
-
-function fnv(s: string): string {
-  let h = 0x811c9dc5
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i)
-    h = Math.imul(h, 0x01000193)
-  }
-  return (h >>> 0).toString(36)
 }
 
 /** 把文档里的段落序列化，同时记下纯文本每个字符对应的文档位置 */
@@ -93,7 +88,7 @@ export function collectParagraphs(editor: Editor, minLen = 30): Para[] {
       return false
     })
     const t = plain.trim()
-    if (t.length >= minLen && !t.startsWith('写作要点')) out.push({ pos, marked, plain, map, cites, hash: fnv(marked) })
+    if (t.length >= minLen && !t.startsWith('写作要点')) out.push({ pos, marked, plain, map, cites, hash: textFingerprint(marked) })
     return false
   })
   return out
@@ -103,6 +98,14 @@ function place(p: Para, a: Annotation): PlacedAnnotation | null {
   const idx = p.plain.indexOf(a.anchor)
   if (idx < 0 || !a.anchor) return null
   const end = idx + a.anchor.length
+  if (a.kind === 'missing_citation') {
+    const sentence = containingSentence(p.plain, idx, end)
+    if (!sentence || sentence.start !== idx || sentence.end !== end || sentenceHasCitation(sentence, p.cites)) return null
+  }
+  if (a.kind === 'rewrite') {
+    const sentence = containingSentence(p.plain, idx, end)
+    if (!sentence || sentenceHasCitation(sentence, p.cites)) return null
+  }
   const from = p.map[idx]
   const to = p.map[end - 1] + 1
   const lastChar = p.plain[end - 1]
@@ -118,7 +121,7 @@ function place(p: Para, a: Annotation): PlacedAnnotation | null {
     }
     card = a.items.some((it) => it.verdict !== 'supports')
   }
-  return { ...a, key: `${p.hash}:${a.id}`, paraPos: p.pos, from, to, insertAt, citePos, card }
+  return { ...a, key: `${p.hash}:${a.id}`, dismissKey: reviewDismissKey(a), paraPos: p.pos, from, to, insertAt, citePos, card }
 }
 
 function load<T>(key: string, fallback: T): T {
@@ -144,6 +147,10 @@ export interface ReviewState {
   running: boolean
   reviewAll: () => void
   dismiss: (key: string) => void
+  dismissMany: (keys: string[]) => void
+  acceptRewrite: (annotation: PlacedAnnotation) => boolean
+  checked: number
+  paragraphCount: number
 }
 
 /**
@@ -153,8 +160,13 @@ export interface ReviewState {
  * - 段落一改，它的旧批注立即消失，等再次停顿后重新检查。
  */
 export function useMarginReview(editor: Editor | null, docId: string, title: string, enabled: boolean): ReviewState {
-  const cacheKey = `aria.review.${docId}`
+  // Old results could label cited sentences/subclauses as missing citations.
+  const cacheKey = `aria.review.v2.${docId}`
   const dismissKey = `aria.dismiss.${docId}`
+  const proseKey = `aria.prose.${docId}`
+  const initialProse = useMemo(() => load<ProseCache>(proseKey, {}), [proseKey])
+  const prose = useRef(initialProse)
+  const proseHydrated = useRef(false)
   const [cache, setCache] = useState<Record<string, Annotation[]>>(() => load(cacheKey, {}))
   const [dismissed, setDismissed] = useState<string[]>(() => load(dismissKey, []))
   const [paras, setParas] = useState<Para[]>([])
@@ -165,6 +177,32 @@ export function useMarginReview(editor: Editor | null, docId: string, title: str
   const timer = useRef<number | undefined>(undefined)
   const titleRef = useRef(title)
   titleRef.current = title
+
+  // Preserve the current round when loading old caches, and migrate ignores
+  // away from paragraph hashes so inserting a citation cannot undo an ignore.
+  useEffect(() => {
+    const migrated: string[] = []
+    let remembered = false
+    for (const paragraph of paras) {
+      const annotations = cache[paragraph.hash]
+      if (!annotations) continue
+      if (!proseHydrated.current && !(textFingerprint(paragraph.plain) in prose.current)) {
+        prose.current = stabilizeProse(prose.current, paragraph.plain, annotations).prose
+        remembered = true
+      }
+      for (const annotation of annotations) {
+        const stable = reviewDismissKey(annotation)
+        if (dismissed.includes(`${paragraph.hash}:${annotation.id}`) && !dismissed.includes(stable)) migrated.push(stable)
+      }
+    }
+    if (paras.length) proseHydrated.current = true
+    if (remembered) save(proseKey, prose.current)
+    if (migrated.length) setDismissed((current) => {
+      const next = [...new Set([...current, ...migrated])].slice(-500)
+      save(dismissKey, next)
+      return next
+    })
+  }, [paras, cache, dismissed, proseKey, dismissKey])
 
   // 段落快照：文档变化后稍等再算（打字时不必每个字符都算）
   useEffect(() => {
@@ -200,7 +238,12 @@ export function useMarginReview(editor: Editor | null, docId: string, title: str
     for (const p of paras) {
       const k = paraKey(p.plain)
       const a = seeds.current.get(k)
-      if (a && !(p.hash in cache)) add[p.hash] = a
+      if (a && !(p.hash in cache)) {
+        const stable = stabilizeProse(prose.current, p.plain, a)
+        prose.current = stable.prose
+        save(proseKey, prose.current)
+        add[p.hash] = stable.annotations
+      }
       if (a) seeds.current.delete(k)
     }
     if (Object.keys(add).length)
@@ -209,7 +252,7 @@ export function useMarginReview(editor: Editor | null, docId: string, title: str
         save(cacheKey, next)
         return next
       })
-  }, [paras, cache, cacheKey])
+  }, [paras, cache, cacheKey, proseKey])
 
   // 停顿后把还没检查过的段落放进队列（跳过光标所在段落）
   const schedule = useCallback(
@@ -218,7 +261,7 @@ export function useMarginReview(editor: Editor | null, docId: string, title: str
       const sel = editor.state.selection.from
       const current = collectParagraphs(editor)
       const todo = current
-        .filter((p) => !(p.hash in cache) && !inflight.current.has(p.hash))
+        .filter((p) => (force || !(p.hash in cache)) && !inflight.current.has(p.hash))
         .filter((p) => force || !editor.isFocused || sel < p.pos || sel > p.pos + p.marked.length + 2)
         .map((p) => p.hash)
       if (todo.length) {
@@ -260,7 +303,10 @@ export function useMarginReview(editor: Editor | null, docId: string, title: str
       .annotate(p.marked, titleRef.current)
       .then((r) =>
         setCache((c) => {
-          const next = { ...c, [hash]: r.annotations }
+          const stable = stabilizeProse(prose.current, p.plain, r.annotations)
+          prose.current = stable.prose
+          save(proseKey, prose.current)
+          const next = { ...c, [hash]: stable.annotations }
           // 只保留当前文档里还存在的段落，防止缓存无限增长
           const live = new Set(collectParagraphs(editor).map((x) => x.hash))
           for (const k of Object.keys(next)) if (!live.has(k) && k !== hash) delete next[k]
@@ -274,7 +320,7 @@ export function useMarginReview(editor: Editor | null, docId: string, title: str
         if (!inflight.current.size) setRunning(false)
         setQueue((q) => [...q]) // 触发下一个
       })
-  }, [queue, editor, cacheKey])
+  }, [queue, editor, cacheKey, proseKey])
 
   useEffect(() => {
     if (!queue.length && !running) setTotal(0)
@@ -283,30 +329,53 @@ export function useMarginReview(editor: Editor | null, docId: string, title: str
   const placed = useMemo(() => {
     const out: PlacedAnnotation[] = []
     for (const p of paras) {
-      for (const a of cache[p.hash] ?? []) {
+      for (const a of stableReviewAnnotations(prose.current, p.plain, cache[p.hash] ?? [])) {
         const pa = place(p, a)
-        if (pa && !dismissed.includes(pa.key)) out.push(pa)
+        if (pa && !dismissed.includes(pa.key) && !dismissed.includes(pa.dismissKey!)) out.push(pa)
       }
     }
     return out.sort((a, b) => a.from - b.from)
   }, [paras, cache, dismissed])
 
-  const dismiss = useCallback(
-    (key: string) =>
+  const dismissMany = useCallback(
+    (keys: string[]) =>
       setDismissed((d) => {
-        const next = [...d, key].slice(-500)
+        const next = [...new Set([...d, ...keys])].slice(-500)
         save(dismissKey, next)
         return next
       }),
     [dismissKey],
   )
 
+  const acceptRewrite = useCallback((annotation: PlacedAnnotation) => {
+    if (!editor || editor.isDestroyed) return false
+    const result = rewriteTransaction(editor.state, annotation)
+    if (!result) return false
+    // Accepting a suggestion completes this paragraph's automatic style round.
+    // Another style pass requires an explicit full review or a later text edit.
+    prose.current = rememberProse(prose.current, result.plainAfter, null)
+    save(proseKey, prose.current)
+    editor.view.dispatch(result.transaction)
+    editor.view.dispatch(closeHistory(editor.state.tr))
+    editor.commands.focus(undefined, { scrollIntoView: false })
+    return true
+  }, [editor, proseKey])
+
   return {
     placed,
     pending: queue.length + inflight.current.size,
     total,
     running,
-    reviewAll: () => schedule(true),
-    dismiss,
+    reviewAll: () => {
+      // Only an explicit review starts another style round for unchanged text.
+      for (const paragraph of editor ? collectParagraphs(editor) : []) delete prose.current[textFingerprint(paragraph.plain)]
+      save(proseKey, prose.current)
+      schedule(true)
+    },
+    dismiss: (key: string) => dismissMany([key]),
+    dismissMany,
+    acceptRewrite,
+    checked: paras.filter((paragraph) => paragraph.hash in cache && !queue.includes(paragraph.hash) && !inflight.current.has(paragraph.hash)).length,
+    paragraphCount: paras.length,
   }
 }

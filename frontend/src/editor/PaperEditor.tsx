@@ -21,6 +21,7 @@ import { DraftParagraph } from './extensions/DraftParagraph'
 import { EditorToolbar } from './EditorToolbar'
 import { FloatingToc } from './FloatingToc'
 import { MarginNotes, NoteGroupCard } from './MarginNotes'
+import { BatchCitationsDialog } from './BatchCitationsDialog'
 import { References } from './References'
 import { SelectionAssist } from './SelectionAssist'
 import { useGhostCompletion } from './useGhostCompletion'
@@ -90,6 +91,7 @@ function useColumns(el: HTMLElement | null) {
 export function PaperEditor({ docId }: { docId: string }) {
   const { setEditor, docTitle, setDocTitle, notify, copilot, review, bumpDocs, drawerOpen, setDrawerOpen } = useApp()
   const [loaded, setLoaded] = useState(false)
+  const [batchOpen, setBatchOpen] = useState(false)
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [active, setActive] = useState<string | null>(null)
   const [hover, setHover] = useState<string | null>(null)
@@ -345,6 +347,10 @@ export function PaperEditor({ docId }: { docId: string }) {
                 setActive={setActive}
                 onHover={setHover}
                 onDismiss={rv.dismiss}
+                onAcceptRewrite={(annotation) => {
+                  if (rv.acceptRewrite(annotation)) notify('已接受精简；本段不会自动接着生成新的精简建议，需要时可主动检查全文', 'success')
+                  else notify('原句已变化或包含引用，请重新审阅', 'warning')
+                }}
                 columnRef={marginRef}
                 isHandled={isHandled}
               />
@@ -357,11 +363,11 @@ export function PaperEditor({ docId }: { docId: string }) {
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, px: 2, height: 38, borderTop: `1px solid ${brand.lineSoft}`, flexShrink: 0 }}>
         <Counts editor={editor} />
         {review && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, overflowX: 'auto' }}>
             {rv.pending > 0 ? (
               <Typography sx={{ fontSize: 11.5, color: brand.faint, display: 'flex', alignItems: 'center', gap: 0.75, whiteSpace: 'nowrap' }}>
                 <CircularProgress size={10} sx={{ color: brand.faint }} />
-                正在检查 {Math.max(0, rv.total - rv.pending) + 1}/{Math.max(rv.total, 1)} 段
+                检查中 · 已覆盖 {rv.checked}/{rv.paragraphCount} 段，待完成 {rv.pending} 段
               </Typography>
             ) : (
               <Tooltip title={cols.marginW ? 'Alt+↓ / Alt+↑ 逐条查看' : drawerOpen ? '收起右侧抽屉以显示页边建议' : ''}>
@@ -369,7 +375,7 @@ export function PaperEditor({ docId }: { docId: string }) {
                   onClick={() => !cols.marginW && drawerOpen && setDrawerOpen(false)}
                   sx={{ fontSize: 11.5, color: cards.length ? brand.ink : brand.faint, cursor: !cols.marginW && drawerOpen ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
                 >
-                  {allNotes.some((n) => n.card) ? `页边建议 ${cards.length}` : '页边暂无建议'}
+                  {rv.checked < rv.paragraphCount ? `已检查 ${rv.checked}/${rv.paragraphCount} 段 · 当前建议 ${cards.length}` : allNotes.some((n) => n.card) ? `页边建议 ${cards.length}` : '页边暂无建议'}
                   {!cols.marginW && cards.length ? '（页边放不下：点正文里的标记查看）' : ''}
                 </Typography>
               </Tooltip>
@@ -391,8 +397,12 @@ export function PaperEditor({ docId }: { docId: string }) {
                 </Box>
               </Tooltip>
             ))}
-            <Button size="small" onClick={rv.reviewAll} disabled={rv.pending > 0} sx={{ fontSize: 11.5, py: 0, minHeight: 22 }}>
+            <Button size="small" title="重新检查全文，并主动开启新一轮精简审阅" onClick={rv.reviewAll} disabled={rv.pending > 0} sx={{ fontSize: 11.5, py: 0, minHeight: 22, whiteSpace: 'nowrap', flexShrink: 0 }}>
               检查全文
+            </Button>
+            <Button size="small" onClick={() => setBatchOpen(true)} disabled={!rv.placed.some((n) => n.kind === 'missing_citation' || (n.kind === 'cite_check' && n.card))}
+              sx={{ fontSize: 11.5, py: 0, minHeight: 22, whiteSpace: 'nowrap', flexShrink: 0 }}>
+              批量处理引用
             </Button>
           </Box>
         )}
@@ -405,6 +415,7 @@ export function PaperEditor({ docId }: { docId: string }) {
         <SaveBadge state={saveState} />
       </Box>
       <SelectionAssist editor={editor} />
+      {batchOpen && <BatchCitationsDialog editor={editor} notes={rv.placed.filter((n) => n.card)} coverage={{ checked: rv.checked, total: rv.paragraphCount, pending: rv.pending }} onClose={() => setBatchOpen(false)} onDismissMany={rv.dismissMany} />}
       {/* 页边放不下批注时（比如分屏对照）：正文里只留标记，点标记或光标进入那句话，批注浮在句子下方 */}
       {!cols.marginW && activeGroup && (
         <Popper
@@ -425,7 +436,11 @@ export function PaperEditor({ docId }: { docId: string }) {
           modifiers={[{ name: 'offset', options: { offset: [0, 6] } }, { name: 'preventOverflow', options: { padding: 12 } }]}
           sx={{ zIndex: 20, width: 340 }}
         >
-          <NoteGroupCard editor={editor} notes={activeGroup.notes} onClose={() => setActive(null)} onHover={setHover} onDismiss={rv.dismiss} />
+          <NoteGroupCard editor={editor} notes={activeGroup.notes} onClose={() => setActive(null)} onHover={setHover} onDismiss={rv.dismiss}
+            onAcceptRewrite={(annotation) => {
+              if (rv.acceptRewrite(annotation)) notify('已接受精简；本段不会自动接着生成新的精简建议，需要时可主动检查全文', 'success')
+              else notify('原句已变化或包含引用，请重新审阅', 'warning')
+            }} />
         </Popper>
       )}
     </Box>

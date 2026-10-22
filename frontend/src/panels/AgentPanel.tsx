@@ -293,7 +293,7 @@ function Launcher({
 // ------------------------------------------------------------------ 主面板
 export function AgentPanel() {
   const { docId, editor, papers, refreshPapers, notify, alertAgent } = useApp()
-  const { run, stop, running } = useAgentStream()
+  const { run, stop, running, stopping } = useAgentStream()
   const [input, setInput] = useState('')
   const [topic, setTopic] = useState('')
   const [language, setLanguage] = useState<'zh' | 'en'>('zh')
@@ -576,8 +576,8 @@ export function AgentPanel() {
                   <Typography sx={{ fontSize: 13, fontWeight: 500, color: brand.purple, flex: 1 }}>综述 Agent</Typography>
                   {total > 0 && <Typography sx={{ fontSize: 11.5, color: brand.muted }}>{fmt(total)}</Typography>}
                   {status === 'running' ? (
-                    <Button size="small" startIcon={<StopCircleOutlinedIcon />} onClick={() => stop(threadId)} sx={{ ml: 0.5, color: brand.red, py: 0, minHeight: 24, fontSize: 12 }}>
-                      停止
+                    <Button size="small" disabled={stopping} startIcon={<StopCircleOutlinedIcon />} onClick={() => stop(threadId)} sx={{ ml: 0.5, color: brand.red, py: 0, minHeight: 24, fontSize: 12 }}>
+                      {stopping ? '正在保存并停止…' : '停止'}
                     </Button>
                   ) : (
                     <Tooltip title="返回首页">
