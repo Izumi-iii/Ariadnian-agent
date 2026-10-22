@@ -9,6 +9,7 @@ from functools import lru_cache
 from typing import Iterator
 
 from . import llm
+from .config import ModelTier, get_settings
 from .library import Paper, get_paper
 from .retrieval import Hit, search
 
@@ -153,8 +154,12 @@ JUDGE_SYSTEM = (
 )
 
 
-def judge_support(sentence: str, paper: Paper, snippet: str) -> dict:
-    user = f"论文中的句子：{sentence}\n\n文献：{paper.title} ({paper.year or 'n.d.'})\n片段：{snippet[:1500]}"
+@lru_cache(maxsize=1024)
+def _cached_support(sentence: str, paper_id: str, title: str, year: int | None, snippet: str,
+                    tier_config: ModelTier, fake_mode: bool, provider: str, prompt: str) -> dict:
+    # Configuration and evidence content participate in the key. Failed calls
+    # raise out of the cached function, so transient failures are never cached.
+    user = f"论文中的句子：{sentence}\n\n文献：{title} ({year or 'n.d.'})\n片段：{snippet}"
 
     def fake(_: list) -> str:
         from .retrieval import tokenize
@@ -163,15 +168,21 @@ def judge_support(sentence: str, paper: Paper, snippet: str) -> dict:
         verdict = "supports" if overlap >= 3 else ("partial" if overlap >= 1 else "unrelated")
         return '{"verdict": "%s", "reason": "离线演示：按关键词重合度(%d)判断"}' % (verdict, overlap)
 
+    data = llm.chat_json(
+        [{"role": "system", "content": prompt}, {"role": "user", "content": user}],
+        tier="judge", temperature=0, fake=fake,
+    )
+    verdict = data.get("verdict", "partial")
+    if verdict not in {"supports", "partial", "unrelated"}:
+        verdict = "partial"
+    return {"verdict": verdict, "reason": str(data.get("reason", ""))[:120]}
+
+
+def judge_support(sentence: str, paper: Paper, snippet: str) -> dict:
     try:
-        data = llm.chat_json(
-            [{"role": "system", "content": JUDGE_SYSTEM}, {"role": "user", "content": user}],
-            tier="judge", temperature=0, fake=fake,
-        )
-        verdict = data.get("verdict", "partial")
-        if verdict not in {"supports", "partial", "unrelated"}:
-            verdict = "partial"
-        return {"verdict": verdict, "reason": str(data.get("reason", ""))[:120]}
+        settings = get_settings()
+        return dict(_cached_support(sentence.strip(), paper.id, paper.title, paper.year, snippet[:1500],
+                                    settings.tiers["judge"], settings.llm_fake, settings.provider, JUDGE_SYSTEM))
     except Exception as e:  # noqa: BLE001
         return {"verdict": "unknown", "reason": f"判断失败：{e}"}
 
@@ -199,7 +210,9 @@ def suggest_citations(sentence: str, k: int = 5, judge: bool = True) -> list[dic
             "score": h.score,
         }
         if judge:
-            item.update(judge_support(sentence, paper, h.text))
+            # Use the same per-paper evidence selection and verdict as the
+            # post-insertion verifier, rather than judging the global-search hit.
+            item.update(verify_citation(sentence, paper.id))
         out.append(item)
     if judge:
         rank = {"supports": 0, "partial": 1, "unknown": 2, "unrelated": 3}
@@ -211,11 +224,11 @@ def verify_citation(sentence: str, paper_id: str) -> dict:
     paper = get_paper(paper_id)
     if not paper:
         return {"paper_id": paper_id, "verdict": "missing", "reason": "文献库中没有这篇文献"}
-    hits = search(retrieval_query(sentence), top_k=1, paper_ids=[paper_id])
+    hits = [h for h in search(retrieval_query(sentence), top_k=1, paper_ids=[paper_id]) if h.paper_id == paper_id]
     if not hits:
-        return {"paper_id": paper_id, "verdict": "unrelated", "reason": "这篇文献中没有检索到相关内容", "snippet": ""}
+        return {"paper_id": paper_id, "verdict": "unknown", "reason": "未检索到足够依据，暂时无法判断是否支持", "snippet": ""}
     res = judge_support(sentence, paper, hits[0].text)
-    return {"paper_id": paper_id, "snippet": hits[0].text[:600], "page": hits[0].page, **res}
+    return {"paper_id": paper_id, "snippet": hits[0].text[:600], "page": hits[0].page, "section": hits[0].section, **res}
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +338,8 @@ def _review(paragraph_marked: str, plain: str, title: str) -> dict:
 
         sents = [s.strip() for s in split_sentences(plain)]
         wordy = next((s for s in sents if _WORDY.search(s)), None)
-        missing = [s for s in sents if len(s) >= 15 and s != wordy and "[引用]" not in s][:1]
+        marked_sents = split_sentences(paragraph_marked.replace("[引用]", "[@existing]"))
+        missing = [s.strip() for s in marked_sents if len(s.strip()) >= 15 and s.strip() != wordy and not CITE_TOKEN.search(s)][:1]
         data: dict = {"missing": [{"sentence": s, "reason": "事实性论断缺少文献支撑（离线演示）"} for s in missing], "rewrite": None}
         if wordy:
             data["rewrite"] = {"sentence": wordy, "revised": _WORDY.sub("", wordy).replace("  ", " "), "reason": "删去冗余修饰（离线演示）"}
@@ -376,10 +390,19 @@ def annotate(paragraph: str, title: str = "", check_citations: bool = True, revi
             data = _review(marked, plain, title)
         except Exception:  # noqa: BLE001  审稿失败不影响引用核查结果
             data = {}
+        contexts = [(strip_cites(s).strip(), bool(CITE_TOKEN.search(s))) for s in sents]
+        seen_missing: set[str] = set()
         for m in (data.get("missing") or [])[:2]:
             sent = strip_cites(str(m.get("sentence", ""))).replace("[引用]", "").strip()
             if len(sent) < 6 or sent not in plain:
                 continue  # 模型没有原样摘录 → 无法定位，丢弃
+            matches = [(text, cited) for text, cited in contexts if sent in text]
+            if len(matches) != 1 or matches[0][1]:
+                continue  # 已有引用的句子走引用核查；重复原句无法可靠定位
+            sent = matches[0][0]  # 候选与复核均判断完整句子，不只判断模型摘出的半句
+            if sent in seen_missing:
+                continue
+            seen_missing.add(sent)
             cands = [c for c in suggest_citations(sent, k=3, judge=True) if c.get("verdict") in {"supports", "partial"}][:2]
             anns.append({
                 "id": aid("missing", sent), "kind": "missing_citation", "anchor": sent,
@@ -392,7 +415,9 @@ def annotate(paragraph: str, title: str = "", check_citations: bool = True, revi
         if isinstance(rw, dict):
             orig = str(rw.get("sentence", "")).strip()
             revised = str(rw.get("revised", "")).strip()
-            if orig and revised and orig != revised and orig in plain and "[引用]" not in orig:
+            matches = [(text, cited) for text, cited in contexts if orig and orig in text]
+            if (orig and revised and orig != revised and orig in plain and "[引用]" not in orig
+                    and len(matches) == 1 and not matches[0][1] and not CITE_TOKEN.search(revised) and "[引用]" not in revised):
                 anns.append({"id": aid("rewrite", orig), "kind": "rewrite", "anchor": orig, "revised": revised,
                              "reason": str(rw.get("reason", ""))[:60]})
     return anns

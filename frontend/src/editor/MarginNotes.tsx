@@ -33,7 +33,7 @@ function Actions({ children }: { children: React.ReactNode }) {
 }
 
 function NoteCard({
-  a, editor, first, onClose, onHover, onDismiss,
+  a, editor, first, onClose, onHover, onDismiss, onAcceptRewrite,
 }: {
   a: PlacedAnnotation
   editor: Editor
@@ -42,6 +42,7 @@ function NoteCard({
   onClose: () => void
   onHover: (k: string | null) => void
   onDismiss: () => void
+  onAcceptRewrite: (annotation: PlacedAnnotation) => void
 }) {
   const { requestCitations, notify, openReader } = useApp()
   const papers = citeStore.get().papers
@@ -178,10 +179,7 @@ function NoteCard({
           <Actions>
             <Button
               variant="contained"
-              onClick={() => {
-                if (editor.state.doc.textBetween(a.from, a.to) !== a.anchor) return notify('原文已经改动，请等它重新检查', 'warning')
-                editor.chain().focus().insertContentAt({ from: a.from, to: a.to }, a.revised).run()
-              }}
+              onClick={() => onAcceptRewrite(a)}
             >
               接受
             </Button>
@@ -250,7 +248,7 @@ interface Layout {
  * - 离原句太远的收进「还有 N 条」，点开再看。
  */
 export function MarginNotes({
-  editor, notes, active, setActive, onHover, onDismiss, columnRef, isHandled,
+  editor, notes, active, setActive, onHover, onDismiss, onAcceptRewrite, columnRef, isHandled,
 }: {
   editor: Editor
   notes: PlacedAnnotation[]
@@ -258,6 +256,7 @@ export function MarginNotes({
   setActive: (k: string | null) => void
   onHover: (k: string | null) => void
   onDismiss: (k: string) => void
+  onAcceptRewrite: (annotation: PlacedAnnotation) => void
   columnRef: RefObject<HTMLDivElement | null>
   isHandled: (a: PlacedAnnotation) => boolean
 }) {
@@ -354,7 +353,7 @@ export function MarginNotes({
               <Box sx={{ borderRadius: '8px', boxShadow: shadow.lg, bgcolor: '#fff', transform: 'translateX(-4px)', transition: 'transform .15s' }}>
                 {g.notes.map((n, i) => (
                   <Box key={n.key} sx={{ borderTop: i ? `1px solid ${brand.lineSoft}` : 'none' }}>
-                    <NoteCard a={n} editor={editor} first={i === 0} onClose={() => setActive(null)} onHover={onHover} onDismiss={() => onDismiss(n.key)} />
+                    <NoteCard a={n} editor={editor} first={i === 0} onClose={() => setActive(null)} onHover={onHover} onDismiss={() => onDismiss(n.dismissKey ?? n.key)} onAcceptRewrite={onAcceptRewrite} />
                   </Box>
                 ))}
               </Box>
